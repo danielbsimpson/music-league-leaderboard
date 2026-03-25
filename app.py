@@ -17,6 +17,7 @@ from music_league_stats import (
     load_data_from_dirs,
     top_3_winners,
     generate_report_text,
+    _format_name,
 )
 from ui.components import inject_css
 from ui import (
@@ -117,7 +118,7 @@ scope_label = (
 # ---------------------------------------------------------------------------
 # Target player selector
 # ---------------------------------------------------------------------------
-all_player_names = sorted(comp["Name"].tolist())
+all_player_names = sorted(_format_name(n) for n in comp["Name"].tolist())
 default_target   = top_3_winners(subs, vts, comp)[0]["name"]
 
 target_name = st.sidebar.selectbox(

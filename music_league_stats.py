@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import sys
 import math
 from collections import defaultdict
@@ -148,9 +149,23 @@ def load_data_from_dirs(data_dirs: list[str]) -> LeagueData:
     )
 
 
+def _format_name(full_name: str) -> str:
+    """
+    Shorten a full name to "First L." format.
+    Handles names separated by a space (e.g. "Julie Fainberg")
+    or a dot (e.g. "julie.fainberg").
+    If the name has only one part, it is returned as-is.
+    """
+    # Split on either whitespace or a literal dot
+    parts = [p for p in re.split(r'[\s.]+', full_name.strip()) if p]
+    if len(parts) < 2:
+        return full_name.capitalize()
+    return f"{parts[0].capitalize()} {parts[-1][0].upper()}."
+
+
 def _name_map(competitors: pd.DataFrame) -> dict[str, str]:
-    """Return {competitor_id: name} dict."""
-    return dict(zip(competitors["ID"], competitors["Name"]))
+    """Return {competitor_id: shortened display name} dict."""
+    return {cid: _format_name(name) for cid, name in zip(competitors["ID"], competitors["Name"])}
 
 
 # ---------------------------------------------------------------------------

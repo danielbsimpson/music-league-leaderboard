@@ -57,11 +57,18 @@ def bar_chart(
         title=title,
         color_discrete_sequence=[color],
     )
+
+    # Scale height so every bar has ~36px of room; minimum 300px.
+    n = len(labels) if labels else 1
+    height = max(300, n * 36 + 80)  # +80 for title + axis padding
+
+    layout = {**CHART_BASE, "margin": dict(l=10, r=10, t=40, b=10)}
     fig.update_layout(
-        **CHART_BASE,
+        **layout,
+        height=height,
         title_font_size=15,
         xaxis=dict(showgrid=False, title=""),
-        yaxis=dict(showgrid=False, title=""),
+        yaxis=dict(showgrid=False, title="", automargin=True),
         showlegend=False,
     )
     if horizontal:
