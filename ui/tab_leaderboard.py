@@ -16,6 +16,7 @@ from music_league_stats import (
     top_podium_appearances,
     most_misunderstood,
     zero_points_incidents,
+    player_round_averages,
     _points_per_submission,
     _name_map,
 )
@@ -117,3 +118,24 @@ def render(data: LeagueData) -> None:
         )
     else:
         st.success("Nobody scored zero in any round! 🎉")
+
+    st.divider()
+
+    # --------------------------------------------------- round averages
+    st.subheader("📈 Average Points Per Round")
+    avgs = player_round_averages(subs, vts, comp)
+    avg_df = pd.DataFrame(avgs)
+    st.plotly_chart(
+        bar_chart(
+            avg_df["name"].tolist(),
+            avg_df["avg_points"].tolist(),
+            "Average Points Per Round — All Competitors",
+            color="#7ec8e3",
+        ),
+        width="stretch",
+    )
+    st.dataframe(
+        avg_df.rename(columns={"rank": "Rank", "name": "Player", "avg_points": "Avg Pts / Round"}),
+        hide_index=True,
+        width="stretch",
+    )

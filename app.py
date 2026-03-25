@@ -170,7 +170,7 @@ tabs = st.tabs([
     "Top Songs",
     "Fan Map",
     "Trends",
-    "Blowouts",
+    "Songs",
     "Comments",
     "Economy",
 ])

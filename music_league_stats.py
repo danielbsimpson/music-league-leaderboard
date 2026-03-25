@@ -36,6 +36,12 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
+
+# ---------------------------------------------------------------------------
+# New Metrics: Player Round Averages, Most Submitted Songs, Most Artist Appearances
+# ---------------------------------------------------------------------------
+
+
 import pandas as pd
 
 # Ensure stdout can handle Unicode (emoji) on Windows terminals
@@ -56,6 +62,7 @@ class LeagueData:
       - competitors: de-duplicated by ID (same person, same ID across leagues)
       - rounds:      all rounds from every league (IDs are GUIDs – no collisions)
       - submissions: all submissions from every league
+
       - votes:       all votes from every league
 
     The ``league_rounds`` attribute is a list of per-league rounds DataFrames,
@@ -71,6 +78,7 @@ class LeagueData:
 
 
 # ---------------------------------------------------------------------------
+
 # Data loading
 # ---------------------------------------------------------------------------
 
@@ -201,6 +209,84 @@ def _voter_count_per_submission(votes: pd.DataFrame) -> pd.DataFrame:
         .rename(columns={"Voter ID": "VoterCount"})
     )
     return vc
+
+
+# ---------------------------------------------------------------------------
+# New Metrics: Player Round Averages, Most Submitted Songs, Most Artist Appearances
+# ---------------------------------------------------------------------------
+
+def player_round_averages(
+    submissions: pd.DataFrame,
+    votes: pd.DataFrame,
+    competitors: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    """Returns a list of players with their average points per round, ranked descending."""
+    names = _name_map(competitors)
+    pps = _points_per_submission(submissions, votes)
+    avg = (
+        pps.groupby("Submitter ID")["TotalPoints"]
+        .mean()
+        .reset_index()
+        .rename(columns={"TotalPoints": "AvgPoints"})
+        .sort_values("AvgPoints", ascending=False)
+    )
+    return [
+        {
+            "rank":       i + 1,
+            "name":       names.get(row["Submitter ID"], row["Submitter ID"]),
+            "avg_points": round(row["AvgPoints"], 2),
+        }
+        for i, (_, row) in enumerate(avg.iterrows())
+    ]
+
+
+def most_submitted_songs(
+    submissions: pd.DataFrame,
+    top_n: int = 10,
+) -> list[dict[str, Any]]:
+    """
+    Returns a ranked list of songs (by Title + Artist(s)) submitted more than once.
+    """
+    grouped = (
+        submissions.groupby(["Title", "Artist(s)"])
+        .size()
+        .reset_index(name="Count")
+        .sort_values("Count", ascending=False)
+    )
+    filtered = grouped[grouped["Count"] > 1].head(top_n)
+    return [
+        {
+            "rank":   i + 1,
+            "title":  row["Title"],
+            "artist": row["Artist(s)"],
+            "count":  int(row["Count"]),
+        }
+        for i, (_, row) in enumerate(filtered.iterrows())
+    ]
+
+
+def most_artist_appearances(
+    submissions: pd.DataFrame,
+    top_n: int = 10,
+) -> list[dict[str, Any]]:
+    """
+    Returns a ranked list of artists by number of appearances across all submissions.
+    Handles multiple artists per submission (comma-separated).
+    """
+    all_artists: list[str] = []
+    for artists_str in submissions["Artist(s)"].dropna():
+        for artist in artists_str.split(","):
+            artist = artist.strip()
+            if artist:
+                all_artists.append(artist)
+    counter: dict[str, int] = defaultdict(int)
+    for a in all_artists:
+        counter[a] += 1
+    ranked = sorted(counter.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    return [
+        {"rank": i + 1, "artist": artist, "count": count}
+        for i, (artist, count) in enumerate(ranked)
+    ]
 
 
 # ---------------------------------------------------------------------------
