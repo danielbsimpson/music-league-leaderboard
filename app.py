@@ -67,7 +67,7 @@ folder_names = [os.path.basename(d) for d in discovered]
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
-st.sidebar.title("🎵 Music League Stats")
+st.sidebar.title("🎵 T5 Music League Stats")
 st.sidebar.markdown("---")
 
 st.sidebar.subheader("League Mode")
@@ -136,7 +136,7 @@ st.sidebar.info("Tip: switch tabs above to explore each stat category.")
 # ---------------------------------------------------------------------------
 # Page header
 # ---------------------------------------------------------------------------
-st.title("🎵 Music League Stats")
+st.title("🎵 T5 Music League Stats")
 st.caption(
     f"{len(chosen_dirs)} leagues  ·  "
     f"{len(data.rounds)} rounds  ·  "
