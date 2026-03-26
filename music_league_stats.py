@@ -355,17 +355,54 @@ def most_misunderstood(
     votes: pd.DataFrame,
     competitors: pd.DataFrame,
     top_n: int = 3,
+    league_rounds: list[pd.DataFrame] | None = None,
 ) -> list[dict[str, Any]]:
-    """Bottom competitors by total points received (least points = most misunderstood)."""
+    """
+    Bottom competitors by total points received (least points = most misunderstood).
+
+    Only players who participated in the most recent league are eligible.
+    The most recent league is determined by finding the league whose rounds
+    contain the latest submission ``Created`` date.  Total points are still
+    calculated across all data (cumulative mode).
+    """
     names = _name_map(competitors)
     pps   = _points_per_submission(submissions, votes)
+
+    # --- Identify which submitter IDs are in the most recent league ----------
+    if league_rounds and len(league_rounds) > 1:
+        # Parse submission dates once
+        subs_dated = submissions.copy()
+        subs_dated["Created"] = pd.to_datetime(subs_dated["Created"], utc=True, errors="coerce")
+
+        # For each league, find the latest submission date among its rounds
+        latest_dates: list[pd.Timestamp] = []
+        for lr in league_rounds:
+            league_round_ids = set(lr["ID"].tolist())
+            mask = subs_dated["Round ID"].isin(league_round_ids)
+            if mask.any():
+                latest_dates.append(subs_dated.loc[mask, "Created"].max())
+            else:
+                latest_dates.append(pd.Timestamp.min.tz_localize("UTC"))
+
+        # The most recent league is whichever has the latest submission date
+        most_recent_idx = int(pd.Series(latest_dates).argmax())
+        recent_round_ids = set(league_rounds[most_recent_idx]["ID"].tolist())
+        recent_submitters = set(
+            submissions.loc[submissions["Round ID"].isin(recent_round_ids), "Submitter ID"]
+        )
+    else:
+        # Single league — all submitters are eligible
+        recent_submitters = set(submissions["Submitter ID"].unique())
+
+    # --- Rank eligible players by total points (ascending) -------------------
     totals = (
         pps.groupby("Submitter ID")["TotalPoints"]
         .sum()
         .reset_index()
-        .sort_values("TotalPoints", ascending=True)
-        .head(top_n)
     )
+    totals = totals[totals["Submitter ID"].isin(recent_submitters)]
+    totals = totals.sort_values("TotalPoints", ascending=True).head(top_n)
+
     return [
         {
             "rank":   rank + 1,

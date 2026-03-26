@@ -30,6 +30,7 @@ _WINNER_STYLES = [
 ]
 _PODIUM_COLORS = ["#2e6b4a", "#3a7d5a", "#4a9068", "#5aa376", "#6ab684"]
 _MISUND_COLORS = ["#8b3a3a", "#9e4a4a", "#b25e5e", "#c47070", "#d48484"]
+_AVG_COLORS    = ["#1a5276", "#1f618d", "#2471a3", "#2e86c1", "#3498db"]
 
 
 def render(data: LeagueData) -> None:
@@ -44,7 +45,8 @@ def render(data: LeagueData) -> None:
     # ------------------------------------------------------------------ tiles
     winners        = top_3_winners(subs, vts, comp, top_n=5)
     podium_entries = top_podium_appearances(subs, vts, comp, rds)[:5]
-    misunderstood  = most_misunderstood(subs, vts, comp, top_n=5)
+    misunderstood  = most_misunderstood(subs, vts, comp, top_n=5, league_rounds=data.league_rounds)
+    avg_entries    = player_round_averages(subs, vts, comp)[:5]
 
     winner_tiles = [
         stat_tile(icon, w["name"], f"{w['points']} pts", bg)
@@ -58,12 +60,18 @@ def render(data: LeagueData) -> None:
         stat_tile("💔", e["name"], f"{e['points']} pts", bg)
         for e, bg in zip(misunderstood, _MISUND_COLORS)
     ]
+    avg_tiles = [
+        stat_tile("📈", e["name"], f"{e['avg_points']} avg pts", bg)
+        for e, bg in zip(avg_entries, _AVG_COLORS)
+    ]
 
-    col_win, col_pod, col_mis = st.columns([5, 5, 5])
+    col_win, col_pod, col_avg, col_mis  = st.columns([5, 5, 5, 5])
     with col_win:
         st.markdown(tile_group("🏆 Top 5 Winners", winner_tiles), unsafe_allow_html=True)
     with col_pod:
         st.markdown(tile_group("🥇 Top Podium Appearances", podium_tiles), unsafe_allow_html=True)
+    with col_avg:
+        st.markdown(tile_group("📈 Top 5 by Round Average", avg_tiles), unsafe_allow_html=True)
     with col_mis:
         st.markdown(tile_group("😥 Most Misunderstood", misund_tiles), unsafe_allow_html=True)
 

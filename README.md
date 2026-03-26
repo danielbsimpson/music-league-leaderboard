@@ -188,7 +188,8 @@ These match the export format from Music League. **Do not rename columns.**
 ### 🏆 Leaderboard
 - **Top 5 Winners** — players ranked by total points received across all rounds
 - **Top Podium Appearances** — players who most often finished in the top 3 in a single round
-- **Most Misunderstood** — players who received the fewest total points
+- **Most Misunderstood** — players from the most recent league who received the fewest total points
+- **Top 5 by Round Average** — players with the highest average points per round (blue tiles)
 - **Total Points bar chart** — all competitors ranked visually
 - **Points Per Round Heatmap** — per-player, per-round points grid
 - **Zero Points Incidents** — how many times each player scored zero in a round
