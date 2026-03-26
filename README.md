@@ -230,9 +230,9 @@ Player names are automatically shortened to a **"First L."** format for cleaner 
 
 | Raw name in CSV | Displayed as |
 |-----------------|--------------|
-| `Julie Fainberg` | `Julie F.` |
-| `jonathan.lynch` | `Jonathan L.` |
-| `rob zeller` | `Rob Z.` |
+| `Julie F*******` | `Julie F.` |
+| `jonathan.l****` | `Jonathan L.` |
+| `rob z*****` | `Rob Z.` |
 | `passionloaf` | `Passionloaf` |
 
 Names with a single word (usernames, aliases) are capitalised and left as-is. Names separated by either a space or a dot are both handled.
