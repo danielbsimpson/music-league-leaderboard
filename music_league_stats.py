@@ -223,20 +223,17 @@ def player_round_averages(
     """Returns a list of players with their average points per round, ranked descending."""
     names = _name_map(competitors)
     pps = _points_per_submission(submissions, votes)
-    avg = (
-        pps.groupby("Submitter ID")["TotalPoints"]
-        .mean()
-        .reset_index()
-        .rename(columns={"TotalPoints": "AvgPoints"})
-        .sort_values("AvgPoints", ascending=False)
-    )
+    grouped = pps.groupby("Submitter ID")["TotalPoints"].agg(["mean", "count"]).reset_index()
+    grouped.columns = ["Submitter ID", "AvgPoints", "Rounds"]
+    grouped = grouped.sort_values("AvgPoints", ascending=False)
     return [
         {
             "rank":       i + 1,
             "name":       names.get(row["Submitter ID"], row["Submitter ID"]),
             "avg_points": round(row["AvgPoints"], 2),
+            "rounds":     int(row["Rounds"]),
         }
-        for i, (_, row) in enumerate(avg.iterrows())
+        for i, (_, row) in enumerate(grouped.iterrows())
     ]
 
 

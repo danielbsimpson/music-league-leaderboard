@@ -61,7 +61,7 @@ def render(data: LeagueData) -> None:
         for e, bg in zip(misunderstood, _MISUND_COLORS)
     ]
     avg_tiles = [
-        stat_tile("📈", e["name"], f"{e['avg_points']} avg pts", bg)
+        stat_tile("📈", e["name"], f"{e['avg_points']} avg · {e['rounds']} rounds", bg)
         for e, bg in zip(avg_entries, _AVG_COLORS)
     ]
 
