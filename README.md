@@ -2,6 +2,7 @@
 
 A Streamlit web app that turns exported [Music League](https://musicleague.com/) data into rich interactive stats, charts, and downloadable reports.
 
+![Sidebar](images/Full_dashboard.png)
 ---
 
 ## Table of Contents
@@ -195,11 +196,15 @@ These match the export format from Music League. **Do not rename columns.**
 - **Zero Points Incidents** — how many times each player scored zero in a round
 - **Average Points Per Round** — each player's mean score per round, ranked
 
+![Leaderboard](images/leaderboard.png)
+
 ### 🎵 Song Stats
 - **Most Universally Liked** — top songs by total points and by distinct voter count, each with submitter shown; adjustable top-N slider (3–20)
 - **Biggest Blowouts** — rounds with the largest winning margin (1st vs. 2nd place), bar chart + table
 - **Most Submitted Songs** — songs that were submitted more than once across all rounds
 - **Most Artist Appearances** — artists whose songs appear most frequently across all submissions
+
+![Song Stats](images/Song_Stats.png)
 
 ### 🤝 Fan Map
 - **Biggest Fans** — who gave the most points to the selected target player
@@ -207,21 +212,29 @@ These match the export format from Music League. **Do not rename columns.**
 - **Most Generous Voter** — who spread their points across the most distinct submitters per round
 - **Full Points-Given Matrix** — heatmap of every voter → submitter point total
 
+![Fan Map](images/Fan_Map.png)
+
 ### 📈 Trends & Consistency
 - **Most Consistent** — players with the lowest variance in points received per round
 - **Most Volatile** — players with the highest variance
 - **Most Improved** — comparison of early-round vs. late-round averages per league
 - **Points Over Time** — line chart of each player's points across all rounds
 
+![Trends](images/Trends.png)
+
 ### 💬 Comments
 - **Most Talkative** — players ranked by total comments made (votes + submissions)
 - **Most Commented-On Songs** — songs that received the most vote comments
 - **Full Comment Table** — searchable table of every comment from votes and submissions
 
+![Comments](images/Comments.png)
+
 ### 💰 Point Economy
 - **Summary metrics** — total points distributed, rounds played, averages per round and per submission
 - **Points Per Round bar** — total points given out each round over time
 - **Vote Distribution** — how often each point value (1, 2, 3, …) was used
+
+![Point Economy](images/Economy.png)
 
 ---
 
