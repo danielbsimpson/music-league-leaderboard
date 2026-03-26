@@ -2,9 +2,9 @@
 
 A Streamlit web app that turns exported [Music League](https://musicleague.com/) data into rich interactive stats, charts, and downloadable reports.
 
-🚀 **[Live Demo](https://t5-music-league-leaderboard.streamlit.app/)**
+You can see a live version of this streamlit app hosted on Streamlit Community Cloud here: 🚀🚀 **[T5 Music League Leaderboard](https://t5-music-league-leaderboard.streamlit.app/)** 🚀🚀
 
-![Sidebar](images/Full_dashboard.png)
+
 ---
 
 ## Table of Contents
