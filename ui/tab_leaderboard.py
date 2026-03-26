@@ -80,8 +80,10 @@ def render(data: LeagueData) -> None:
     )
     st.plotly_chart(
         bar_chart(totals["Name"].tolist(), totals["TotalPoints"].tolist(),
-                  "Total Points — All Competitors"),
+                  "Total Points — All Competitors",
+                  x_label="Points", y_label="Player"),
         width="stretch",
+        key="lb_total_pts",
     )
 
     st.divider()
@@ -101,7 +103,7 @@ def render(data: LeagueData) -> None:
         title="Points earned per player per round",
     )
     fig_heat.update_layout(**CHART_BASE)
-    st.plotly_chart(fig_heat, width="stretch")
+    st.plotly_chart(fig_heat, width="stretch", key="lb_heatmap")
 
     st.divider()
 
@@ -113,8 +115,10 @@ def render(data: LeagueData) -> None:
         zdf = pd.DataFrame(zpi["by_person"])
         st.plotly_chart(
             bar_chart(zdf["name"].tolist(), zdf["zero_rounds"].tolist(),
-                      "Zero-point rounds per player", color="#e05252"),
+                      "Zero-point rounds per player", color="#e05252",
+                      x_label="Zero-Point Rounds", y_label="Player"),
             width="stretch",
+            key="lb_zero_pts",
         )
     else:
         st.success("Nobody scored zero in any round! 🎉")
@@ -131,8 +135,10 @@ def render(data: LeagueData) -> None:
             avg_df["avg_points"].tolist(),
             "Average Points Per Round — All Competitors",
             color="#7ec8e3",
+            x_label="Avg Points / Round", y_label="Player",
         ),
         width="stretch",
+        key="lb_round_avg",
     )
     st.dataframe(
         avg_df.rename(columns={"rank": "Rank", "name": "Player", "avg_points": "Avg Pts / Round"}),

@@ -57,7 +57,7 @@ def render(data: LeagueData) -> None:
         yaxis=dict(title=""),
         showlegend=False,
     )
-    st.plotly_chart(fig_eco, width="stretch")
+    st.plotly_chart(fig_eco, width="stretch", key="economy_per_round")
 
     st.divider()
 
@@ -76,4 +76,4 @@ def render(data: LeagueData) -> None:
         yaxis=dict(title=""),
         showlegend=False,
     )
-    st.plotly_chart(fig_dist, width="stretch")
+    st.plotly_chart(fig_dist, width="stretch", key="economy_vote_dist")

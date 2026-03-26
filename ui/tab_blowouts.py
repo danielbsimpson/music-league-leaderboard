@@ -1,7 +1,7 @@
-"""
+﻿"""
 ui/tab_blowouts.py
 -------------------
-Renders the 🎵 Songs tab — blowouts, most-submitted songs, and artist appearances.
+Renders the 🎵 Song Stats tab — most liked songs, blowouts, repeated songs, artist appearances.
 """
 
 from __future__ import annotations
@@ -11,11 +11,12 @@ import streamlit as st
 
 from music_league_stats import (
     LeagueData,
+    most_universally_liked,
     biggest_blowout,
     most_submitted_songs,
     most_artist_appearances,
 )
-from ui.components import bar_chart
+from ui.components import bar_chart, ACCENT
 
 
 def render(data: LeagueData) -> None:
@@ -24,7 +25,65 @@ def render(data: LeagueData) -> None:
     subs = data.submissions
     vts  = data.votes
 
-    st.header("🎵 Songs")
+    st.header("🎵 Song Stats")
+
+    # --------------------------------------------------- most universally liked
+    st.subheader("❤️ Most Universally Liked Songs")
+    top_n = st.slider("Show top N songs", min_value=3, max_value=20, value=10, key="top_n_songs")
+    liked = most_universally_liked(subs, vts, comp, top_n=top_n)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**By Total Points**")
+        bp = pd.DataFrame(liked["by_points"])
+        st.plotly_chart(
+            bar_chart(
+                (bp["title"] + " — " + bp["artist"]).tolist(),
+                bp["total_points"].tolist(),
+                "Most points received",
+                x_label="Points", y_label="Song",
+            ),
+            width="stretch",
+            key="songs_liked_by_pts",
+        )
+        st.dataframe(
+            bp.rename(columns={
+                "title":        "Title",
+                "artist":       "Artist",
+                "submitted_by": "Submitted By",
+                "total_points": "Points",
+                "voter_count":  "Voters",
+            })[["Title", "Artist", "Submitted By", "Points", "Voters"]],
+            width="stretch", hide_index=True,
+        )
+
+    with col2:
+        st.markdown("**By Number of Voters**")
+        bv = pd.DataFrame(liked["by_voters"])
+        st.plotly_chart(
+            bar_chart(
+                (bv["title"] + " — " + bv["artist"]).tolist(),
+                bv["voter_count"].tolist(),
+                "Most distinct voters",
+                color="#b47bff",
+                x_label="Voters", y_label="Song",
+            ),
+            width="stretch",
+            key="songs_liked_by_voters",
+        )
+        st.dataframe(
+            bv.rename(columns={
+                "title":        "Title",
+                "artist":       "Artist",
+                "submitted_by": "Submitted By",
+                "total_points": "Points",
+                "voter_count":  "Voters",
+            })[["Title", "Artist", "Submitted By", "Points", "Voters"]],
+            width="stretch", hide_index=True,
+        )
+
+    st.divider()
 
     # --------------------------------------------------- biggest blowouts
     st.subheader("💥 Biggest Blowouts")
@@ -47,8 +106,10 @@ def render(data: LeagueData) -> None:
             blow_df["Margin"].tolist(),
             "Winning margin per round (1st − 2nd place points)",
             color="#ffd166",
+            x_label="Margin (pts)", y_label="Round",
         ),
         width="stretch",
+        key="songs_blowouts",
     )
     st.dataframe(blow_df, width="stretch", hide_index=True)
 
@@ -72,8 +133,10 @@ def render(data: LeagueData) -> None:
                 rep_df["Times Submitted"].tolist(),
                 "Most Submitted Songs",
                 color="#c77dff",
+                x_label="Times Submitted", y_label="Song",
             ),
             width="stretch",
+            key="songs_repeated",
         )
         st.dataframe(rep_df, hide_index=True, width="stretch")
     else:
@@ -98,8 +161,10 @@ def render(data: LeagueData) -> None:
                 art_df["Appearances"].tolist(),
                 "Most Frequent Artists",
                 color="#f4a261",
+                x_label="Appearances", y_label="Artist",
             ),
             width="stretch",
+            key="songs_artists",
         )
         st.dataframe(art_df, hide_index=True, width="stretch")
     else:

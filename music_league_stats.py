@@ -379,6 +379,7 @@ def most_misunderstood(
 def most_universally_liked(
     submissions: pd.DataFrame,
     votes: pd.DataFrame,
+    competitors: pd.DataFrame,
     top_n: int = 5,
 ) -> dict[str, list[dict[str, Any]]]:
     """
@@ -386,6 +387,7 @@ def most_universally_liked(
       - by_points:  songs that earned the most total points
       - by_voters:  songs that received points from the most distinct voters
     """
+    names = _name_map(competitors)
     pps = _points_per_submission(submissions, votes)
     vc  = _voter_count_per_submission(votes)
     merged = pps.merge(vc, on=["Round ID", "SpotifyURI"], how="left")
@@ -393,8 +395,9 @@ def most_universally_liked(
 
     def _fmt(row: pd.Series) -> dict[str, Any]:
         return {
-            "title":       row["Title"],
-            "artist":      row["Artist(s)"],
+            "title":        row["Title"],
+            "artist":       row["Artist(s)"],
+            "submitted_by": names.get(row["Submitter ID"], row["Submitter ID"]),
             "total_points": int(row["TotalPoints"]),
             "voter_count":  int(row["VoterCount"]),
         }
@@ -888,11 +891,11 @@ def print_full_report(
 
     # ---- Most Universally Liked ----
     _section("❤️   Most Universally Liked Songs — by Points")
-    for i, s in enumerate(most_universally_liked(subs, vts)["by_points"], 1):
+    for i, s in enumerate(most_universally_liked(subs, vts, comp)["by_points"], 1):
         print(f"  #{i}  {s['title']:<40}  {s['artist']:<25}  {s['total_points']} pts")
 
     _section("❤️   Most Universally Liked Songs — by Voters")
-    for i, s in enumerate(most_universally_liked(subs, vts)["by_voters"], 1):
+    for i, s in enumerate(most_universally_liked(subs, vts, comp)["by_voters"], 1):
         print(f"  #{i}  {s['title']:<40}  {s['artist']:<25}  {s['voter_count']} voters")
 
     # ---- Biggest Fans / Least Compatible ----
@@ -1030,11 +1033,11 @@ def generate_report_text(data: LeagueData, target_name: str | None = None) -> st
         _p(f"  #{e['rank']}  {e['name']:<25}  {e['points']} pts")
 
     _sec("Most Universally Liked Songs -- by Points")
-    for i, s in enumerate(most_universally_liked(subs, vts)["by_points"], 1):
+    for i, s in enumerate(most_universally_liked(subs, vts, comp)["by_points"], 1):
         _p(f"  #{i}  {s['title']:<40}  {s['artist']:<25}  {s['total_points']} pts")
 
     _sec("Most Universally Liked Songs -- by Voters")
-    for i, s in enumerate(most_universally_liked(subs, vts)["by_voters"], 1):
+    for i, s in enumerate(most_universally_liked(subs, vts, comp)["by_voters"], 1):
         _p(f"  #{i}  {s['title']:<40}  {s['artist']:<25}  {s['voter_count']} voters")
 
     _sec(f"Biggest Fans of {target_name}")

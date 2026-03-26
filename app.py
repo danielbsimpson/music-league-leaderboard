@@ -15,14 +15,11 @@ import streamlit as st
 from music_league_stats import (
     LeagueData,
     load_data_from_dirs,
-    top_3_winners,
     generate_report_text,
-    _format_name,
 )
 from ui.components import inject_css
 from ui import (
     tab_leaderboard,
-    tab_top_songs,
     tab_fan_map,
     tab_trends,
     tab_blowouts,
@@ -34,7 +31,7 @@ from ui import (
 # Page config & global CSS
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="🎵 Music League Stats",
+    page_title="🎵 T5 Music League Stats",
     page_icon="🎵",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -77,7 +74,7 @@ st.sidebar.subheader("League Mode")
 mode = st.sidebar.radio(
     "View",
     ["Single League", "Cumulative (multiple leagues)"],
-    index=0,
+    index=1,
 )
 
 if mode == "Single League":
@@ -116,30 +113,16 @@ scope_label = (
 )
 
 # ---------------------------------------------------------------------------
-# Target player selector
-# ---------------------------------------------------------------------------
-all_player_names = sorted(_format_name(n) for n in comp["Name"].tolist())
-default_target   = top_3_winners(subs, vts, comp)[0]["name"]
-
-target_name = st.sidebar.selectbox(
-    "Target player (Fans & Compatibility)",
-    all_player_names,
-    index=all_player_names.index(default_target) if default_target in all_player_names else 0,
-)
-
-st.sidebar.markdown("---")
-
-# ---------------------------------------------------------------------------
 # Report download
 # ---------------------------------------------------------------------------
 st.sidebar.subheader("Export Report")
 
 @st.cache_data(show_spinner="Generating report...")
-def _cached_report(dirs: tuple[str, ...], target: str) -> str:
+def _cached_report(dirs: tuple[str, ...]) -> str:
     d = get_data(dirs)
-    return generate_report_text(d, target)
+    return generate_report_text(d)
 
-report_text = _cached_report(tuple(chosen_dirs), target_name)
+report_text = _cached_report(tuple(chosen_dirs))
 st.sidebar.download_button(
     label="Download .txt report",
     data=report_text.encode("utf-8"),
@@ -167,10 +150,9 @@ st.caption(
 # ---------------------------------------------------------------------------
 tabs = st.tabs([
     "Leaderboard",
-    "Top Songs",
+    "Song Stats",
     "Fan Map",
     "Trends",
-    "Songs",
     "Comments",
     "Economy",
 ])
@@ -179,19 +161,16 @@ with tabs[0]:
     tab_leaderboard.render(data)
 
 with tabs[1]:
-    tab_top_songs.render(data)
+    tab_blowouts.render(data)
 
 with tabs[2]:
-    tab_fan_map.render(data, target_name)
+    tab_fan_map.render(data)
 
 with tabs[3]:
     tab_trends.render(data)
 
 with tabs[4]:
-    tab_blowouts.render(data)
-
-with tabs[5]:
     tab_comments.render(data)
 
-with tabs[6]:
+with tabs[5]:
     tab_economy.render(data)

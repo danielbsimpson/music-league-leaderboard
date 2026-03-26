@@ -36,8 +36,10 @@ def render(data: LeagueData) -> None:
         })
         st.plotly_chart(
             bar_chart(talk_df["Player"].tolist(), talk_df["Total"].tolist(),
-                      "Total comments made", color="#b47bff"),
+                      "Total comments made", color="#b47bff",
+                      x_label="Comments Made", y_label="Player"),
             width="stretch",
+            key="comments_talkative",
         )
         st.dataframe(talk_df, width="stretch", hide_index=True)
 
@@ -49,8 +51,10 @@ def render(data: LeagueData) -> None:
         })
         st.plotly_chart(
             bar_chart(recv_df["Player"].tolist(), recv_df["Comments Received"].tolist(),
-                      "Comments received on submitted songs", color=ACCENT),
+                      "Comments received on submitted songs", color=ACCENT,
+                      x_label="Comments Received", y_label="Player"),
             width="stretch",
+            key="comments_received",
         )
         st.dataframe(recv_df, width="stretch", hide_index=True)
 

@@ -47,15 +47,20 @@ def bar_chart(
     title: str,
     color: str = ACCENT,
     horizontal: bool = True,
+    x_label: str = "Value",
+    y_label: str = "Name",
 ) -> go.Figure:
     """Return a styled Plotly bar chart."""
     orientation = "h" if horizontal else "v"
     x, y = (values, labels) if horizontal else (labels, values)
+    # Map the positional x/y column names to human-readable hover labels
+    hover_labels = {"x": x_label, "y": y_label} if horizontal else {"x": y_label, "y": x_label}
     fig = px.bar(
         x=x, y=y,
         orientation=orientation,
         title=title,
         color_discrete_sequence=[color],
+        labels=hover_labels,
     )
 
     # Scale height so every bar has ~36px of room; minimum 300px.

@@ -40,8 +40,10 @@ def render(data: LeagueData) -> None:
         con_df = pd.DataFrame(con).rename(columns={"name": "Player", "variance": "Variance"})
         st.plotly_chart(
             bar_chart(con_df["Player"].tolist(), con_df["Variance"].tolist(),
-                      "Points variance (lower = more consistent)", color=ACCENT),
+                      "Points variance (lower = more consistent)", color=ACCENT,
+                      x_label="Variance", y_label="Player"),
             width="stretch",
+            key="trends_consistent",
         )
 
     with col_vol:
@@ -50,8 +52,10 @@ def render(data: LeagueData) -> None:
         vol_df = pd.DataFrame(vol).rename(columns={"name": "Player", "variance": "Variance"})
         st.plotly_chart(
             bar_chart(vol_df["Player"].tolist(), vol_df["Variance"].tolist(),
-                      "Points variance (higher = more volatile)", color="#e05252"),
+                      "Points variance (higher = more volatile)", color="#e05252",
+                      x_label="Variance", y_label="Player"),
             width="stretch",
+            key="trends_volatile",
         )
 
     st.divider()
@@ -81,7 +85,7 @@ def render(data: LeagueData) -> None:
         yaxis=dict(title=""),
         legend=dict(bgcolor="rgba(0,0,0,0)"),
     )
-    st.plotly_chart(fig_imp, width="stretch")
+    st.plotly_chart(fig_imp, width="stretch", key="trends_improved")
     st.dataframe(
         imp_df.sort_values("Improvement", ascending=False),
         width="stretch", hide_index=True,
@@ -112,4 +116,4 @@ def render(data: LeagueData) -> None:
         yaxis=dict(title=""),
         legend=dict(bgcolor="rgba(0,0,0,0)"),
     )
-    st.plotly_chart(fig_line, width="stretch")
+    st.plotly_chart(fig_line, width="stretch", key="trends_over_time")
