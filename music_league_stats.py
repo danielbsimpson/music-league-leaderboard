@@ -462,7 +462,10 @@ def biggest_fans(
         raise ValueError(f"Competitor '{target_name}' not found.")
 
     target_tracks = submissions[submissions["Submitter ID"] == target_id]["SpotifyURI"]
-    relevant_votes = votes[votes["SpotifyURI"].isin(target_tracks)]
+    relevant_votes = votes[
+        votes["SpotifyURI"].isin(target_tracks)
+        & (votes["Voter ID"] != target_id)
+    ]
 
     totals = (
         relevant_votes.groupby("Voter ID")["Points"]
