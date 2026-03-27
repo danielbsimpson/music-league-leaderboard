@@ -6,11 +6,24 @@ Renders the 💰 Point Economy tab.
 
 from __future__ import annotations
 
+import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from music_league_stats import LeagueData, point_economy_summary, _points_per_submission
 from ui.components import CHART_BASE, ACCENT
+
+# Quantile buckets: (label, upper_bound_exclusive)
+# Submissions in each round are ranked by points received and grouped into
+# these percentile bands.  The top 10 % captures ~10 % of submissions etc.
+_QUANTILE_BUCKETS = [
+    ("Top 10%",    0.10),
+    ("10–25%",     0.25),
+    ("25–50%",     0.50),
+    ("Bottom 50%", 1.00),
+]
+_BUCKET_COLORS = ["#1DB954", "#ffd166", "#ef476f", "#888888"]
 
 
 def render(data: LeagueData) -> None:
@@ -77,3 +90,102 @@ def render(data: LeagueData) -> None:
         showlegend=False,
     )
     st.plotly_chart(fig_dist, width="stretch", key="economy_vote_dist")
+
+    st.divider()
+
+    # ----------------------------------------- quantile share section
+    st.subheader("📊 Vote Share by Quantile")
+    st.caption(
+        "Submissions in each round are ranked by points received and grouped into "
+        "percentile bands. The chart shows what share of that round's total points "
+        "each band captured."
+    )
+
+    # Build per-round quantile share table
+    pps_q = _points_per_submission(subs, vts).merge(
+        rds[["ID", "Name", "Created"]].rename(
+            columns={"ID": "Round ID", "Name": "RoundName", "Created": "RoundCreated"}
+        ),
+        on="Round ID",
+    ).sort_values("RoundCreated")
+
+    rows: list[dict] = []
+    for round_id, grp in pps_q.groupby("Round ID", sort=False):
+        round_name   = grp["RoundName"].iloc[0]
+        round_total  = grp["TotalPoints"].sum()
+        if round_total == 0:
+            continue
+        # Rank submissions within this round (highest points = rank 1)
+        grp = grp.sort_values("TotalPoints", ascending=False).reset_index(drop=True)
+        n = len(grp)
+        prev_bound = 0.0
+        for label, upper in _QUANTILE_BUCKETS:
+            lo_idx = int(prev_bound * n)
+            hi_idx = max(int(upper * n), lo_idx + 1)   # at least 1 submission
+            hi_idx = min(hi_idx, n)
+            bucket_pts = grp.iloc[lo_idx:hi_idx]["TotalPoints"].sum()
+            rows.append({
+                "RoundName":  round_name,
+                "Created":    grp["RoundCreated"].iloc[0],
+                "Quantile":   label,
+                "Points":     bucket_pts,
+                "PctOfRound": round(100 * bucket_pts / round_total, 1),
+            })
+            prev_bound = upper
+
+    q_df = pd.DataFrame(rows).sort_values("Created")
+
+    # ---- view toggle ----
+    view = st.radio(
+        "View",
+        ["Per Round (stacked bar)", "Overall (donut)"],
+        horizontal=True,
+        key="quantile_view",
+    )
+
+    if view == "Per Round (stacked bar)":
+        fig_q = go.Figure()
+        for (label, _), color in zip(_QUANTILE_BUCKETS, _BUCKET_COLORS):
+            band = q_df[q_df["Quantile"] == label]
+            fig_q.add_trace(go.Bar(
+                x=band["RoundName"],
+                y=band["PctOfRound"],
+                name=label,
+                marker_color=color,
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    f"{label}: " + "%{y:.1f}%<extra></extra>"
+                ),
+            ))
+        fig_q.update_layout(
+            **CHART_BASE,
+            barmode="stack",
+            title="% of round's total points captured by each quantile",
+            xaxis=dict(tickangle=-40, title=""),
+            yaxis=dict(title="% of round points", range=[0, 100]),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_q, width="stretch", key="economy_quantile_bar")
+
+    else:  # Overall donut
+        overall = q_df.groupby("Quantile")["Points"].sum().reset_index()
+        # Preserve bucket order
+        bucket_order = [b[0] for b in _QUANTILE_BUCKETS]
+        overall["Quantile"] = pd.Categorical(overall["Quantile"], categories=bucket_order, ordered=True)
+        overall = overall.sort_values("Quantile")
+        fig_donut = go.Figure(go.Pie(
+            labels=overall["Quantile"],
+            values=overall["Points"],
+            hole=0.55,
+            marker_colors=_BUCKET_COLORS,
+            textinfo="label+percent",
+            hovertemplate="<b>%{label}</b><br>%{value:,} pts  (%{percent})<extra></extra>",
+            direction="clockwise",
+            sort=False,
+        ))
+        fig_donut.update_layout(
+            **CHART_BASE,
+            title="Overall share of all points by quantile",
+            legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
+        )
+        st.plotly_chart(fig_donut, width="stretch", key="economy_quantile_donut")
