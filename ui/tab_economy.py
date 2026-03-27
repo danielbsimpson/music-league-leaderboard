@@ -135,10 +135,41 @@ def render(data: LeagueData) -> None:
 
     q_df = pd.DataFrame(rows).sort_values("Created")
 
+    # ---- pre-compute voter→bucket flow (shared by Per Player bar + Sankey) --
+    from music_league_stats import _name_map
+    voter_names = _name_map(data.competitors)
+
+    bucket_rows_flow: list[dict] = []
+    for round_id, grp in pps_q.groupby("Round ID", sort=False):
+        if grp["TotalPoints"].sum() == 0:
+            continue
+        grp = grp.sort_values("TotalPoints", ascending=False).reset_index(drop=True)
+        n = len(grp)
+        prev_bound = 0.0
+        for label, upper in _QUANTILE_BUCKETS:
+            lo_idx = int(prev_bound * n)
+            hi_idx = min(max(int(upper * n), lo_idx + 1), n)
+            for uri in grp.iloc[lo_idx:hi_idx]["SpotifyURI"]:
+                bucket_rows_flow.append({"SpotifyURI": uri, "Round ID": round_id, "Bucket": label})
+            prev_bound = upper
+
+    bucket_map_flow = pd.DataFrame(bucket_rows_flow)
+    vts_flow = (
+        vts[vts["Points"] > 0]
+        .merge(bucket_map_flow, on=["SpotifyURI", "Round ID"], how="inner")
+        .copy()
+    )
+    vts_flow["VoterName"] = vts_flow["Voter ID"].map(voter_names)
+    player_flow = (
+        vts_flow.groupby(["VoterName", "Bucket"])["Points"]
+        .sum()
+        .reset_index()
+    )
+
     # ---- view toggle ----
     view = st.radio(
         "View",
-        ["Per Round (stacked bar)", "Overall (donut)", "Player → Quantile (Sankey)"],
+        ["Per Round (stacked bar)", "Per Player (stacked bar)", "Overall (donut)", "Player → Quantile (Sankey)"],
         horizontal=True,
         key="quantile_view",
     )
@@ -167,6 +198,46 @@ def render(data: LeagueData) -> None:
         )
         st.plotly_chart(fig_q, width="stretch", key="economy_quantile_bar")
 
+    elif view == "Per Player (stacked bar)":
+        # Order players by total points received (leaderboard rank)
+        pps_recv_pp = _points_per_submission(subs, vts)
+        recv_rank = (
+            pps_recv_pp.groupby("Submitter ID")["TotalPoints"]
+            .sum()
+            .rename(index=voter_names)
+            .sort_values(ascending=False)
+        )
+        player_order = [n for n in recv_rank.index if n in player_flow["VoterName"].values]
+        # Compute each player's % split across buckets
+        player_totals = player_flow.groupby("VoterName")["Points"].sum().rename("Total")
+        pf_pct = (
+            player_flow
+            .join(player_totals, on="VoterName")
+            .assign(PctOfPlayer=lambda df: (100 * df["Points"] / df["Total"]).round(1))
+        )
+        fig_pp = go.Figure()
+        for (label, _), color in zip(_QUANTILE_BUCKETS, _BUCKET_COLORS):
+            band = pf_pct[pf_pct["Bucket"] == label].set_index("VoterName").reindex(player_order)
+            fig_pp.add_trace(go.Bar(
+                x=player_order,
+                y=band["PctOfPlayer"].fillna(0).tolist(),
+                name=label,
+                marker_color=color,
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    f"{label}: " + "%{y:.1f}%<extra></extra>"
+                ),
+            ))
+        fig_pp.update_layout(
+            **CHART_BASE,
+            barmode="stack",
+            title="% of each player's votes that went to each quantile band",
+            xaxis=dict(tickangle=-40, title=""),
+            yaxis=dict(title="% of votes cast", range=[0, 100]),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_pp, width="stretch", key="economy_quantile_player_bar")
+
     elif view == "Overall (donut)":
         overall = q_df.groupby("Quantile")["Points"].sum().reset_index()
         # Preserve bucket order
@@ -191,47 +262,13 @@ def render(data: LeagueData) -> None:
         st.plotly_chart(fig_donut, width="stretch", key="economy_quantile_donut")
 
     elif view == "Player → Quantile (Sankey)":
-        from music_league_stats import _name_map
-        voter_names = _name_map(data.competitors)
-
-        # Assign quantile bucket label to every (round, submission) pair
-        bucket_rows: list[dict] = []
-        for round_id, grp in pps_q.groupby("Round ID", sort=False):
-            if grp["TotalPoints"].sum() == 0:
-                continue
-            grp = grp.sort_values("TotalPoints", ascending=False).reset_index(drop=True)
-            n = len(grp)
-            prev_bound = 0.0
-            for label, upper in _QUANTILE_BUCKETS:
-                lo_idx = int(prev_bound * n)
-                hi_idx = min(max(int(upper * n), lo_idx + 1), n)
-                for uri in grp.iloc[lo_idx:hi_idx]["SpotifyURI"]:
-                    bucket_rows.append({"SpotifyURI": uri, "Round ID": round_id, "Bucket": label})
-                prev_bound = upper
-
-        bucket_map = pd.DataFrame(bucket_rows)
-
-        # Join votes → bucket assignments; keep only positive votes
-        vts_sk = (
-            vts[vts["Points"] > 0]
-            .merge(bucket_map, on=["SpotifyURI", "Round ID"], how="inner")
-            .copy()
-        )
-        vts_sk["VoterName"] = vts_sk["Voter ID"].map(voter_names)
-
-        # Aggregate: voter → bucket → total points sent
-        flow = (
-            vts_sk.groupby(["VoterName", "Bucket"])["Points"]
-            .sum()
-            .reset_index()
-        )
-
-        # Order voters by total points they RECEIVED (leaderboard rank, descending)
+        # Reuse pre-computed player_flow; order by total points received
+        flow = player_flow
         pps_recv = _points_per_submission(subs, vts)
         recv_totals = (
             pps_recv.groupby("Submitter ID")["TotalPoints"]
             .sum()
-            .rename(index=voter_names)          # map ID → display name
+            .rename(index=voter_names)
         )
         voter_order_s = (
             recv_totals
@@ -239,7 +276,6 @@ def render(data: LeagueData) -> None:
             .sort_values(ascending=False)
             .index.tolist()
         )
-        # Any voters not in recv_totals (gave points but never submitted) go at the end
         missing = [n for n in flow["VoterName"].unique() if n not in voter_order_s]
         voter_order_s = voter_order_s + missing
         bucket_order_s = [b[0] for b in _QUANTILE_BUCKETS]
@@ -252,7 +288,6 @@ def render(data: LeagueData) -> None:
         s_targets = [s_idx[r["Bucket"]]    for _, r in flow.iterrows()]
         s_values  = flow["Points"].tolist()
 
-        # Colour each link to match its target quantile bucket, with transparency
         bucket_color_map = {label: color for (label, _), color in zip(_QUANTILE_BUCKETS, _BUCKET_COLORS)}
 
         def _hex_to_rgba(hex_color: str, alpha: float = 0.4) -> str:
