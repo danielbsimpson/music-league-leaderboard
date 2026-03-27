@@ -138,7 +138,7 @@ def render(data: LeagueData) -> None:
     # ---- view toggle ----
     view = st.radio(
         "View",
-        ["Per Round (stacked bar)", "Overall (donut)"],
+        ["Per Round (stacked bar)", "Overall (donut)", "Player → Quantile (Sankey)"],
         horizontal=True,
         key="quantile_view",
     )
@@ -167,7 +167,7 @@ def render(data: LeagueData) -> None:
         )
         st.plotly_chart(fig_q, width="stretch", key="economy_quantile_bar")
 
-    else:  # Overall donut
+    elif view == "Overall (donut)":
         overall = q_df.groupby("Quantile")["Points"].sum().reset_index()
         # Preserve bucket order
         bucket_order = [b[0] for b in _QUANTILE_BUCKETS]
@@ -189,3 +189,99 @@ def render(data: LeagueData) -> None:
             legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
         )
         st.plotly_chart(fig_donut, width="stretch", key="economy_quantile_donut")
+
+    elif view == "Player → Quantile (Sankey)":
+        from music_league_stats import _name_map
+        voter_names = _name_map(data.competitors)
+
+        # Assign quantile bucket label to every (round, submission) pair
+        bucket_rows: list[dict] = []
+        for round_id, grp in pps_q.groupby("Round ID", sort=False):
+            if grp["TotalPoints"].sum() == 0:
+                continue
+            grp = grp.sort_values("TotalPoints", ascending=False).reset_index(drop=True)
+            n = len(grp)
+            prev_bound = 0.0
+            for label, upper in _QUANTILE_BUCKETS:
+                lo_idx = int(prev_bound * n)
+                hi_idx = min(max(int(upper * n), lo_idx + 1), n)
+                for uri in grp.iloc[lo_idx:hi_idx]["SpotifyURI"]:
+                    bucket_rows.append({"SpotifyURI": uri, "Round ID": round_id, "Bucket": label})
+                prev_bound = upper
+
+        bucket_map = pd.DataFrame(bucket_rows)
+
+        # Join votes → bucket assignments; keep only positive votes
+        vts_sk = (
+            vts[vts["Points"] > 0]
+            .merge(bucket_map, on=["SpotifyURI", "Round ID"], how="inner")
+            .copy()
+        )
+        vts_sk["VoterName"] = vts_sk["Voter ID"].map(voter_names)
+
+        # Aggregate: voter → bucket → total points sent
+        flow = (
+            vts_sk.groupby(["VoterName", "Bucket"])["Points"]
+            .sum()
+            .reset_index()
+        )
+
+        # Order voters by total points they cast (descending)
+        voter_order_s  = (
+            flow.groupby("VoterName")["Points"]
+            .sum().sort_values(ascending=False).index.tolist()
+        )
+        bucket_order_s = [b[0] for b in _QUANTILE_BUCKETS]
+
+        s_nodes = voter_order_s + bucket_order_s
+        s_idx   = {name: i for i, name in enumerate(s_nodes)}
+        n_v, n_b = len(voter_order_s), len(bucket_order_s)
+
+        s_sources = [s_idx[r["VoterName"]] for _, r in flow.iterrows()]
+        s_targets = [s_idx[r["Bucket"]]    for _, r in flow.iterrows()]
+        s_values  = flow["Points"].tolist()
+
+        # Colour each link to match its target quantile bucket, with transparency
+        bucket_color_map = {label: color for (label, _), color in zip(_QUANTILE_BUCKETS, _BUCKET_COLORS)}
+
+        def _hex_to_rgba(hex_color: str, alpha: float = 0.4) -> str:
+            h = hex_color.lstrip("#")
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return f"rgba({r},{g},{b},{alpha})"
+
+        sk_link_colors = [
+            _hex_to_rgba(bucket_color_map[r["Bucket"]])
+            for _, r in flow.iterrows()
+        ]
+
+        node_x_s = [0.01] * n_v + [0.99] * n_b
+        node_y_s = (
+            [round((i + 1) / (n_v + 1), 3) for i in range(n_v)]
+            + [round((i + 1) / (n_b + 1), 3) for i in range(n_b)]
+        )
+        node_colors_s = ["#1DB954"] * n_v + _BUCKET_COLORS[:n_b]
+
+        fig_sk = go.Figure(go.Sankey(
+            arrangement="fixed",
+            node=dict(
+                label     = s_nodes,
+                x         = node_x_s,
+                y         = node_y_s,
+                color     = node_colors_s,
+                pad       = 14,
+                thickness = 18,
+                line      = dict(color="rgba(0,0,0,0)", width=0),
+            ),
+            link=dict(
+                source = s_sources,
+                target = s_targets,
+                value  = s_values,
+                color  = sk_link_colors,
+            ),
+        ))
+        fig_sk.update_layout(
+            **{**CHART_BASE, "margin": dict(l=10, r=10, t=50, b=10)},
+            title="Points flow: voter (left) → quantile band they fed (right)",
+            height=max(400, n_v * 36 + 80),
+        )
+        st.plotly_chart(fig_sk, width="stretch", key="economy_quantile_sankey")
