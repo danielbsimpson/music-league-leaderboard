@@ -130,7 +130,7 @@ plotly
 
 ### Cumulative view (multiple leagues)
 
-In the sidebar, switch the radio button from **Single League** to **Cumulative**, then check all the leagues you want to combine. Stats like "Most Improved" automatically scope the first/last 5 rounds *per league* before averaging, so results remain meaningful across seasons.
+In the sidebar, switch the radio button from **Single League** to **Cumulative**, then check all the leagues you want to combine. In cumulative mode several charts adapt: the **Most Improved** section shows two side-by-side charts (current league first/second half, and all leagues combined first/second half), and the **Vote Share by Quantile** Sankey orders players by overall leaderboard rank.
 
 ### Renaming a league
 
@@ -192,7 +192,7 @@ These match the export format from Music League. **Do not rename columns.**
 - **Top 5 Winners** — players ranked by total points received across all rounds
 - **Top Podium Appearances** — players who most often finished in the top 3 in a single round
 - **Most Misunderstood** — players from the most recent league who received the fewest total points
-- **Top 5 by Round Average** — players with the highest average points per round (blue tiles)
+- **Top 5 by Round Average** — players with the highest average points per round
 - **Total Points bar chart** — all competitors ranked visually
 - **Points Per Round Heatmap** — per-player, per-round points grid
 - **Zero Points Incidents** — how many times each player scored zero in a round
@@ -209,25 +209,31 @@ These match the export format from Music League. **Do not rename columns.**
 ![Song Stats](images/Song_Stats.png)
 
 ### 🤝 Fan Map
-- **Biggest Fans** — who gave the most points to the selected target player
+- **Target player selector** — choose any player; all sections below update to that player
+- **Biggest Fans** — who gave the most points to the selected target player (self-votes excluded)
 - **Least Compatible** — who gave the fewest points to the target player
+- **Full Points-Given** — two sub-tabs:
+  - *Sankey Flow* — voter → recipient flow diagram, nodes ordered by cumulative points, links and right-side nodes colour-coded per player
+  - *Heatmap* — classic voter × submitter point matrix
 - **Most Generous Voter** — who spread their points across the most distinct submitters per round
-- **Full Points-Given Matrix** — heatmap of every voter → submitter point total
 
 ![Fan Map](images/Fan_Map.png)
 
 ### 📈 Trends & Consistency
 - **Most Consistent** — players with the lowest variance in points received per round
 - **Most Volatile** — players with the highest variance
-- **Most Improved** — comparison of early-round vs. late-round averages per league
-- **Points Over Time** — line chart of each player's points across all rounds
+- **Most Improved** — rounds are split into two equal halves and first-half vs. second-half averages are compared:
+  - *Single league mode*: one chart for that league
+  - *Cumulative mode*: two side-by-side charts — current league only, and all leagues combined
+- **Points Over Time** — line chart of each player's points across all rounds, ordered chronologically
 
 ![Trends](images/Trends.png)
 
 ### 💬 Comments
-- **Most Talkative** — players ranked by total comments made (votes + submissions)
-- **Most Commented-On Songs** — songs that received the most vote comments
-- **Full Comment Table** — searchable table of every comment from votes and submissions
+- **Most Talkative** — all players ranked by total comments made (vote comments + submission comments), including those with zero
+- **Most Comments Received** — all players ranked by comments received on their submitted songs
+- **Songs with Most Comments Received** — top 5 most commented-on songs, with an expandable list of every comment per song
+- **All Comments** — searchable table of every comment (votes + submissions); vote comments now show the song title instead of a raw Spotify URI
 
 ![Comments](images/Comments.png)
 
@@ -235,6 +241,11 @@ These match the export format from Music League. **Do not rename columns.**
 - **Summary metrics** — total points distributed, rounds played, averages per round and per submission
 - **Points Per Round bar** — total points given out each round over time
 - **Vote Distribution** — how often each point value (1, 2, 3, …) was used
+- **Vote Share by Quantile** — submissions in each round are ranked and grouped into percentile bands (Top 10%, 10–25%, 25–50%, Bottom 50%); four views:
+  - *Per Round (stacked bar)* — what % of each round's points went to each band
+  - *Per Player (stacked bar)* — what % of each player's votes went to each band, ordered by leaderboard rank
+  - *Overall (donut)* — aggregate share across all rounds
+  - *Player → Quantile (Sankey)* — flow diagram of voter → quantile band, links colour-coded by band, nodes ordered by total points received
 
 ![Point Economy](images/Economy.png)
 
