@@ -96,8 +96,12 @@ def render(data: LeagueData) -> None:
     # ---------------------------------------- points over time (line)
     st.subheader("📉 Points Over Time (per player)")
     pps = _points_per_submission(subs, vts)
-    rounds_sorted = rds.sort_values("Created")[["ID", "Name"]].rename(
-        columns={"ID": "Round ID", "Name": "RoundName"}
+    rounds_sorted = (
+        rds.copy()
+        .assign(Created=lambda df: pd.to_datetime(df["Created"], utc=True))
+        .sort_values("Created")
+        [["ID", "Name"]]
+        .rename(columns={"ID": "Round ID", "Name": "RoundName"})
     )
     pps_time = (
         pps.merge(rounds_sorted, on="Round ID")

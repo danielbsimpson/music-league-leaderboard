@@ -60,12 +60,59 @@ def render(data: LeagueData) -> None:
 
     st.divider()
 
+    # ------------------------------------------------- most commented songs
+    st.subheader("🎵 Songs with Most Comments Received")
+
+    uri_to_title  = dict(zip(subs["SpotifyURI"], subs["Title"] + " – " + subs["Artist(s)"]))
+    uri_to_sub    = dict(zip(subs["SpotifyURI"], subs["Submitter ID"]))
+    from music_league_stats import _name_map
+    names = _name_map(comp)
+
+    commented_votes = vts[vts["Comment"].notna() & (vts["Comment"].str.strip() != "")].copy()
+    commented_votes["Song"]      = commented_votes["SpotifyURI"].map(uri_to_title)
+    commented_votes["Submitter"] = commented_votes["SpotifyURI"].map(uri_to_sub).map(names)
+
+    top_songs = (
+        commented_votes.groupby(["SpotifyURI", "Song", "Submitter"])
+        .size()
+        .reset_index(name="Comment Count")
+        .sort_values("Comment Count", ascending=False)
+        .head(5)
+    )
+
+    st.plotly_chart(
+        bar_chart(
+            top_songs["Song"].tolist(),
+            top_songs["Comment Count"].tolist(),
+            "Top 5 most commented-on songs",
+            color="#ffd166",
+            x_label="Comments Received", y_label="Song",
+        ),
+        width="stretch",
+        key="comments_top_songs",
+    )
+
+    for _, song_row in top_songs.iterrows():
+        song_comments = (
+            commented_votes[commented_votes["SpotifyURI"] == song_row["SpotifyURI"]]
+            [["Song", "Submitter", "Comment"]]
+            .rename(columns={"Comment": "Comment Text"})
+            .reset_index(drop=True)
+        )
+        with st.expander(
+            f"💬 {song_row['Song']}  ·  submitted by {song_row['Submitter']}  "
+            f"·  {song_row['Comment Count']} comment(s)"
+        ):
+            st.dataframe(song_comments[["Comment Text"]], hide_index=True, width="stretch")
+
+    st.divider()
+
     st.subheader("😂 All Comments")
     search = st.text_input("🔍 Search comments", placeholder="Type to filter…")
     all_comments = funniest_comment(vts, subs, comp)
     comments_df = pd.DataFrame(all_comments).rename(columns={
         "author": "Author", "source": "Source",
-        "context": "Song / Context", "comment": "Comment",
+        "context": "Song", "comment": "Comment",
     })
     if search:
         mask = comments_df.apply(

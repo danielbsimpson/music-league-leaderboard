@@ -694,6 +694,7 @@ def most_talkative_commenter(
     Returns competitors sorted by total comment count descending.
     """
     names = _name_map(competitors)
+    all_ids = competitors["ID"].tolist()
 
     # Comments in votes (non-empty)
     vote_comments = (
@@ -713,7 +714,12 @@ def most_talkative_commenter(
         .rename("SubComments")
     )
 
-    combined = pd.concat([vote_comments, sub_comments], axis=1).fillna(0)
+    # Re-index against every competitor so players with 0 comments are included
+    combined = (
+        pd.concat([vote_comments, sub_comments], axis=1)
+        .reindex(all_ids)
+        .fillna(0)
+    )
     combined["Total"] = combined["VoteComments"] + combined["SubComments"]
     combined = combined.sort_values("Total", ascending=False).reset_index()
     combined.rename(columns={"index": "ID"}, inplace=True)
@@ -742,10 +748,16 @@ def funniest_comment(
     """
     names = _name_map(competitors)
 
+    # Build a lookup from SpotifyURI → "Title – Artist(s)"
+    uri_to_song = dict(zip(
+        submissions["SpotifyURI"],
+        submissions["Title"] + " – " + submissions["Artist(s)"],
+    ))
+
     vote_rows = votes[votes["Comment"].notna() & (votes["Comment"].str.strip() != "")].copy()
     vote_rows["author_id"] = vote_rows["Voter ID"]
     vote_rows["source"]    = "vote"
-    vote_rows["context"]   = vote_rows["SpotifyURI"]
+    vote_rows["context"]   = vote_rows["SpotifyURI"].map(uri_to_song).fillna(vote_rows["SpotifyURI"])
 
     sub_rows = submissions[
         submissions["Comment"].notna() & (submissions["Comment"].str.strip() != "")
@@ -839,6 +851,7 @@ def top_3_comment_winners(
     Returns the top N.
     """
     names = _name_map(competitors)
+    all_ids = competitors["ID"].tolist()
 
     # Map track → submitter
     uri_to_submitter = dict(zip(submissions["SpotifyURI"], submissions["Submitter ID"]))
@@ -849,7 +862,12 @@ def top_3_comment_winners(
         votes[votes["Comment"].notna() & (votes["Comment"].str.strip() != "")]
         .groupby("SubmitterID")
         .size()
-        .reset_index(name="CommentsReceived")
+        .rename("CommentsReceived")
+        .reindex(all_ids)
+        .fillna(0)
+        .astype(int)
+        .reset_index()
+        .rename(columns={"index": "SubmitterID", "SubmitterID": "SubmitterID"})
         .sort_values("CommentsReceived", ascending=False)
         .head(top_n)
     )
