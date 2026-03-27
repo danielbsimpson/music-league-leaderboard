@@ -226,11 +226,22 @@ def render(data: LeagueData) -> None:
             .reset_index()
         )
 
-        # Order voters by total points they cast (descending)
-        voter_order_s  = (
-            flow.groupby("VoterName")["Points"]
-            .sum().sort_values(ascending=False).index.tolist()
+        # Order voters by total points they RECEIVED (leaderboard rank, descending)
+        pps_recv = _points_per_submission(subs, vts)
+        recv_totals = (
+            pps_recv.groupby("Submitter ID")["TotalPoints"]
+            .sum()
+            .rename(index=voter_names)          # map ID → display name
         )
+        voter_order_s = (
+            recv_totals
+            .reindex([n for n in recv_totals.index if n in flow["VoterName"].values])
+            .sort_values(ascending=False)
+            .index.tolist()
+        )
+        # Any voters not in recv_totals (gave points but never submitted) go at the end
+        missing = [n for n in flow["VoterName"].unique() if n not in voter_order_s]
+        voter_order_s = voter_order_s + missing
         bucket_order_s = [b[0] for b in _QUANTILE_BUCKETS]
 
         s_nodes = voter_order_s + bucket_order_s
