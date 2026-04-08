@@ -157,6 +157,261 @@ def load_data_from_dirs(data_dirs: list[str]) -> LeagueData:
     )
 
 
+# ---------------------------------------------------------------------------
+# Timing / submission & voting cadence helpers
+# ---------------------------------------------------------------------------
+
+def _next_weekday(dt: "pd.Timestamp", weekday: int) -> "pd.Timestamp":
+    """
+    Return the next occurrence of *weekday* (0=Mon … 6=Sun) on or after *dt*.
+    All times are kept in UTC.
+    """
+    days_ahead = weekday - dt.weekday()
+    if days_ahead < 0:
+        days_ahead += 7
+    return (dt + pd.Timedelta(days=days_ahead)).replace(
+        hour=23, minute=59, second=59, microsecond=0
+    )
+
+
+def _infer_round_deadlines(
+    rounds: "pd.DataFrame",
+    submissions: "pd.DataFrame",
+    votes: "pd.DataFrame",
+) -> "pd.DataFrame":
+    """
+    For each round infer two deadlines:
+      • submission_deadline – last submission timestamp, snapped to end-of-day
+        on the same Monday (or the next Monday if needed).
+      • vote_deadline       – last vote timestamp, snapped to end-of-day on
+        the same Friday (or the next Friday if needed).
+
+    Returns a DataFrame indexed by Round ID with columns:
+        round_id, round_name, submission_deadline, vote_deadline,
+        playlist_open  (= submission_deadline + 1 second, i.e. when voting opens)
+    """
+    import numpy as np
+
+    sub_ts = (
+        submissions.assign(ts=pd.to_datetime(submissions["Created"], utc=True))
+        .groupby("Round ID")["ts"]
+        .max()
+        .rename("last_sub")
+    )
+    vote_ts = (
+        votes.assign(ts=pd.to_datetime(votes["Created"], utc=True))
+        .groupby("Round ID")["ts"]
+        .max()
+        .rename("last_vote")
+    )
+
+    rds = (
+        rounds[["ID", "Name"]]
+        .rename(columns={"ID": "round_id", "Name": "round_name"})
+        .set_index("round_id")
+        .join(sub_ts, how="left")
+        .join(vote_ts, how="left")
+    )
+
+    # Snap to end-of-day on the appropriate weekday
+    rds["submission_deadline"] = rds["last_sub"].apply(
+        lambda t: _next_weekday(t, 0) if pd.notna(t) else pd.NaT  # Monday
+    )
+    rds["vote_deadline"] = rds["last_vote"].apply(
+        lambda t: _next_weekday(t, 4) if pd.notna(t) else pd.NaT  # Friday
+    )
+    # playlist_open = the moment the submission window closes
+    rds["playlist_open"] = rds["submission_deadline"] + pd.Timedelta(seconds=1)
+
+    return rds.reset_index()
+
+
+def submission_timing_stats(
+    submissions: "pd.DataFrame",
+    votes: "pd.DataFrame",
+    rounds: "pd.DataFrame",
+    competitors: "pd.DataFrame",
+) -> "pd.DataFrame":
+    """
+    Per-player submission timing stats across all rounds they participated in.
+
+    For each submission, compute how many hours *before* the Monday deadline
+    the person submitted (positive = early, negative = late/edge).
+
+    Returns a DataFrame with columns:
+        player_id, player_name,
+        avg_hours_before_deadline, min_hours_before_deadline,
+        max_hours_before_deadline, rounds_submitted
+    """
+    names = _name_map(competitors)
+    deadlines = _infer_round_deadlines(rounds, submissions, votes)
+
+    subs = submissions.copy()
+    subs["ts"] = pd.to_datetime(subs["Created"], utc=True)
+
+    merged = subs.merge(
+        deadlines[["round_id", "submission_deadline"]],
+        left_on="Round ID", right_on="round_id",
+        how="left",
+    )
+    merged = merged.dropna(subset=["submission_deadline"])
+    merged["hours_before"] = (
+        (merged["submission_deadline"] - merged["ts"]).dt.total_seconds() / 3600
+    )
+
+    grp = (
+        merged.groupby("Submitter ID")["hours_before"]
+        .agg(
+            avg_hours_before_deadline="mean",
+            min_hours_before_deadline="min",
+            max_hours_before_deadline="max",
+            rounds_submitted="count",
+        )
+        .reset_index()
+        .rename(columns={"Submitter ID": "player_id"})
+    )
+    grp["player_name"] = grp["player_id"].map(names)
+    return grp.sort_values("avg_hours_before_deadline")
+
+
+def vote_timing_stats(
+    submissions: "pd.DataFrame",
+    votes: "pd.DataFrame",
+    rounds: "pd.DataFrame",
+    competitors: "pd.DataFrame",
+) -> "pd.DataFrame":
+    """
+    Per-player vote timing stats.
+
+    For each round a player voted in, their *vote timestamp* is the single
+    timestamp shared across all their votes in that round (Music League records
+    them all at once).  We compute:
+      • hours_after_playlist  – hours after the submission deadline (playlist open)
+                                when the player submitted their votes
+      • hours_before_deadline – hours before the Friday vote deadline
+
+    Returns a DataFrame with columns:
+        player_id, player_name,
+        avg_hours_after_playlist, min_hours_after_playlist, max_hours_after_playlist,
+        avg_hours_before_vote_deadline, min_hours_before_vote_deadline,
+        max_hours_before_vote_deadline,
+        rounds_voted
+    """
+    names = _name_map(competitors)
+    deadlines = _infer_round_deadlines(rounds, submissions, votes)
+
+    vts = votes.copy()
+    vts["ts"] = pd.to_datetime(vts["Created"], utc=True)
+
+    # One row per (Voter ID, Round ID) — take the max timestamp (last vote cast)
+    per_round = (
+        vts.groupby(["Voter ID", "Round ID"])["ts"]
+        .max()
+        .reset_index()
+        .rename(columns={"ts": "vote_ts"})
+    )
+
+    merged = per_round.merge(
+        deadlines[["round_id", "playlist_open", "vote_deadline"]],
+        left_on="Round ID", right_on="round_id",
+        how="left",
+    )
+    merged = merged.dropna(subset=["playlist_open", "vote_deadline"])
+
+    merged["hours_after_playlist"] = (
+        (merged["vote_ts"] - merged["playlist_open"]).dt.total_seconds() / 3600
+    ).clip(lower=0)  # can't be negative (voted before playlist released)
+
+    merged["hours_before_vote_deadline"] = (
+        (merged["vote_deadline"] - merged["vote_ts"]).dt.total_seconds() / 3600
+    )
+
+    grp = (
+        merged.groupby("Voter ID")
+        .agg(
+            avg_hours_after_playlist=("hours_after_playlist", "mean"),
+            min_hours_after_playlist=("hours_after_playlist", "min"),
+            max_hours_after_playlist=("hours_after_playlist", "max"),
+            avg_hours_before_vote_deadline=("hours_before_vote_deadline", "mean"),
+            min_hours_before_vote_deadline=("hours_before_vote_deadline", "min"),
+            max_hours_before_vote_deadline=("hours_before_vote_deadline", "max"),
+            rounds_voted=("hours_after_playlist", "count"),
+        )
+        .reset_index()
+        .rename(columns={"Voter ID": "player_id"})
+    )
+    grp["player_name"] = grp["player_id"].map(names)
+    return grp.sort_values("avg_hours_after_playlist")
+
+
+def timing_per_round(
+    submissions: "pd.DataFrame",
+    votes: "pd.DataFrame",
+    rounds: "pd.DataFrame",
+    competitors: "pd.DataFrame",
+) -> "pd.DataFrame":
+    """
+    Per-player, per-round timing detail for drill-down charts.
+
+    Returns a DataFrame with columns:
+        player_id, player_name, round_id, round_name,
+        sub_hours_before_deadline,   (NaN if didn't submit)
+        vote_hours_after_playlist,   (NaN if didn't vote)
+        vote_hours_before_deadline,  (NaN if didn't vote)
+    """
+    names = _name_map(competitors)
+    deadlines = _infer_round_deadlines(rounds, submissions, votes)
+
+    # --- submission side ---
+    subs = submissions.copy()
+    subs["ts"] = pd.to_datetime(subs["Created"], utc=True)
+    subs_merged = subs.merge(
+        deadlines[["round_id", "round_name", "submission_deadline", "playlist_open", "vote_deadline"]],
+        left_on="Round ID", right_on="round_id",
+        how="left",
+    )
+    subs_merged["sub_hours_before_deadline"] = (
+        (subs_merged["submission_deadline"] - subs_merged["ts"]).dt.total_seconds() / 3600
+    )
+    subs_detail = subs_merged[
+        ["Submitter ID", "round_id", "round_name", "sub_hours_before_deadline"]
+    ].rename(columns={"Submitter ID": "player_id"})
+
+    # --- vote side ---
+    vts = votes.copy()
+    vts["ts"] = pd.to_datetime(vts["Created"], utc=True)
+    vote_per_round = (
+        vts.groupby(["Voter ID", "Round ID"])["ts"]
+        .max()
+        .reset_index()
+        .rename(columns={"ts": "vote_ts"})
+    )
+    vote_merged = vote_per_round.merge(
+        deadlines[["round_id", "round_name", "playlist_open", "vote_deadline"]],
+        left_on="Round ID", right_on="round_id",
+        how="left",
+    )
+    vote_merged["vote_hours_after_playlist"] = (
+        (vote_merged["vote_ts"] - vote_merged["playlist_open"]).dt.total_seconds() / 3600
+    ).clip(lower=0)
+    vote_merged["vote_hours_before_deadline"] = (
+        (vote_merged["vote_deadline"] - vote_merged["vote_ts"]).dt.total_seconds() / 3600
+    )
+    vote_detail = vote_merged[
+        ["Voter ID", "round_id", "round_name",
+         "vote_hours_after_playlist", "vote_hours_before_deadline"]
+    ].rename(columns={"Voter ID": "player_id"})
+
+    # --- merge ---
+    combined = subs_detail.merge(vote_detail, on=["player_id", "round_id", "round_name"], how="outer")
+    combined["player_name"] = combined["player_id"].map(names)
+    # Attach round order from deadlines
+    round_order = deadlines[["round_id", "submission_deadline"]].sort_values("submission_deadline")
+    combined = combined.merge(round_order[["round_id", "submission_deadline"]], on="round_id", how="left")
+    combined = combined.sort_values(["submission_deadline", "player_name"]).reset_index(drop=True)
+    return combined
+
+
 def _format_name(full_name: str) -> str:
     """
     Shorten a full name to "First L." format.

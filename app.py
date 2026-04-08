@@ -25,6 +25,7 @@ from ui import (
     tab_blowouts,
     tab_comments,
     tab_economy,
+    tab_timing,
 )
 
 # ---------------------------------------------------------------------------
@@ -155,6 +156,7 @@ tabs = st.tabs([
     "Trends",
     "Comments",
     "Economy",
+    "⏱️ Timing",
 ])
 
 with tabs[0]:
@@ -174,3 +176,6 @@ with tabs[4]:
 
 with tabs[5]:
     tab_economy.render(data)
+
+with tabs[6]:
+    tab_timing.render(data)
