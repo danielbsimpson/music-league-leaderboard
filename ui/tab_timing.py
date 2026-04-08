@@ -25,7 +25,7 @@ from music_league_stats import (
     vote_timing_stats,
     timing_per_round,
 )
-from ui.components import CHART_BASE, ACCENT
+from ui.components import CHART_BASE, ACCENT, record_tile
 
 
 # ---------------------------------------------------------------------------
@@ -131,10 +131,16 @@ def render(data: LeagueData) -> None:
         st.markdown("**⚡ Fastest Single Vote**")
         if not fastest_vote_row.empty:
             r = fastest_vote_row.iloc[0]
-            st.metric(
-                r["player_name"],
-                _hms(r["vote_hours_after_playlist"]) + " after playlist drop",
-                help=f"Round: {r['round_name']}",
+            st.markdown(
+                record_tile(
+                    icon="⚡",
+                    player=r["player_name"],
+                    metric=_hms(r["vote_hours_after_playlist"]),
+                    round_name=r["round_name"],
+                    bg="#1a3a2a",
+                    accent=ACCENT,
+                ),
+                unsafe_allow_html=True,
             )
         else:
             st.write("—")
@@ -143,10 +149,16 @@ def render(data: LeagueData) -> None:
         st.markdown("**🐌 Slowest Single Vote**")
         if not slowest_vote_row.empty:
             r = slowest_vote_row.iloc[0]
-            st.metric(
-                r["player_name"],
-                _hms(r["vote_hours_after_playlist"]) + " after playlist drop",
-                help=f"Round: {r['round_name']}",
+            st.markdown(
+                record_tile(
+                    icon="🐌",
+                    player=r["player_name"],
+                    metric=_hms(r["vote_hours_after_playlist"]),
+                    round_name=r["round_name"],
+                    bg="#2a2a1a",
+                    accent="#ffd166",
+                ),
+                unsafe_allow_html=True,
             )
         else:
             st.write("—")
@@ -155,10 +167,16 @@ def render(data: LeagueData) -> None:
         st.markdown("**🌅 Earliest Single Submission**")
         if not earliest_sub_row.empty:
             r = earliest_sub_row.iloc[0]
-            st.metric(
-                r["player_name"],
-                _hms(r["sub_hours_before_deadline"]) + " before deadline",
-                help=f"Round: {r['round_name']}",
+            st.markdown(
+                record_tile(
+                    icon="🌅",
+                    player=r["player_name"],
+                    metric=_hms(r["sub_hours_before_deadline"]),
+                    round_name=r["round_name"],
+                    bg="#1a2a3a",
+                    accent="#6ab0f5",
+                ),
+                unsafe_allow_html=True,
             )
         else:
             st.write("—")
@@ -168,8 +186,17 @@ def render(data: LeagueData) -> None:
         if not latest_sub_row.empty:
             r = latest_sub_row.iloc[0]
             hrs = r["sub_hours_before_deadline"]
-            label = (_hms(abs(hrs)) + (" late!" if hrs < 0 else " before deadline"))
-            st.metric(r["player_name"], label, help=f"Round: {r['round_name']}")
+            st.markdown(
+                record_tile(
+                    icon="🔥",
+                    player=r["player_name"],
+                    metric=_hms(abs(hrs)),
+                    round_name=r["round_name"],
+                    bg="#3a1a1a",
+                    accent="#e05252",
+                ),
+                unsafe_allow_html=True,
+            )
         else:
             st.write("—")
 

@@ -110,6 +110,43 @@ def stat_tile(icon: str, name: str, sub: str, bg: str, text: str = "#f0f0f0") ->
     </div>"""
 
 
+def record_tile(
+    icon: str,
+    player: str,
+    metric: str,
+    round_name: str,
+    bg: str,
+    accent: str = "#f0f0f0",
+    text: str = "#f0f0f0",
+) -> str:
+    """
+    HTML card for a record-holder tile.
+
+      icon        – emoji shown on the left
+      player      – player display name  (large, prominent)
+      metric      – formatted value, e.g. "4h 22m"  (big accent number)
+      round_name  – round label shown as a small footer line
+      bg          – card background colour
+      accent      – colour used for the metric value
+      text        – base text colour
+    """
+    return f"""<div style="
+            background:{bg};
+            border-radius:12px;
+            padding:0.85rem 1rem;
+            box-shadow:0 2px 8px rgba(0,0,0,0.4);
+        ">
+        <div style="font-size:1.6rem;line-height:1;margin-bottom:0.35rem">{icon}</div>
+        <div style="font-size:1rem;font-weight:700;color:{text};
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                    margin-bottom:0.2rem">{player}</div>
+        <div style="font-size:1.5rem;font-weight:800;color:{accent};
+                    letter-spacing:-0.01em;line-height:1.1;margin-bottom:0.35rem">{metric}</div>
+        <div style="font-size:0.72rem;color:{text};opacity:0.6;
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📋 {round_name}</div>
+    </div>"""
+
+
 def tile_group(label: str, tiles_html: list[str]) -> str:
     """Wrap stacked tiles in a labelled flex column."""
     inner = "\n".join(
