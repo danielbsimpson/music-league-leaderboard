@@ -86,10 +86,10 @@ def render(data: LeagueData) -> None:
 
     st.header("⏱️ Submission & Voting Timing")
     st.caption(
-        "Deadlines are inferred from the data: the submission deadline is "
-        "end-of-day **Monday** of the latest submission week; the vote deadline "
-        "is end-of-day **Friday** of the latest vote week. "
-        "Hours are positive = early, negative = late."
+        "Deadlines are grounded in the actual data: the **submission deadline** is "
+        "the timestamp of the last submission made in each round; the **vote deadline** "
+        "is the timestamp of the last vote cast. The playlist window opens the moment "
+        "that final submission lands. Hours are positive = earlier than the last person."
     )
 
     # ------------------------------------------------------------------ compute
@@ -180,7 +180,7 @@ def render(data: LeagueData) -> None:
     # ================================================================
     st.subheader("📬 Submission Timing — Avg Hours Before Monday Deadline")
     st.caption(
-        "Positive = submitted early. A lower bar = cuts it closer to the wire."
+        "Positive = submitted before the last person. 0 = you were the last to submit that round."
     )
 
     sub_sorted = sub_stats.sort_values("avg_hours_before_deadline", ascending=True).copy()

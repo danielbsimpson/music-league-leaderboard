@@ -161,37 +161,27 @@ def load_data_from_dirs(data_dirs: list[str]) -> LeagueData:
 # Timing / submission & voting cadence helpers
 # ---------------------------------------------------------------------------
 
-def _next_weekday(dt: "pd.Timestamp", weekday: int) -> "pd.Timestamp":
-    """
-    Return the next occurrence of *weekday* (0=Mon … 6=Sun) on or after *dt*.
-    All times are kept in UTC.
-    """
-    days_ahead = weekday - dt.weekday()
-    if days_ahead < 0:
-        days_ahead += 7
-    return (dt + pd.Timedelta(days=days_ahead)).replace(
-        hour=23, minute=59, second=59, microsecond=0
-    )
-
-
 def _infer_round_deadlines(
     rounds: "pd.DataFrame",
     submissions: "pd.DataFrame",
     votes: "pd.DataFrame",
 ) -> "pd.DataFrame":
     """
-    For each round infer two deadlines:
-      • submission_deadline – last submission timestamp, snapped to end-of-day
-        on the same Monday (or the next Monday if needed).
-      • vote_deadline       – last vote timestamp, snapped to end-of-day on
-        the same Friday (or the next Friday if needed).
+    For each round derive the actual deadlines directly from the data:
 
-    Returns a DataFrame indexed by Round ID with columns:
-        round_id, round_name, submission_deadline, vote_deadline,
-        playlist_open  (= submission_deadline + 1 second, i.e. when voting opens)
+      • submission_deadline – the timestamp of the very last submission made
+                              in that round (i.e. whoever submitted last closed
+                              the window).
+      • vote_deadline       – the timestamp of the very last vote cast in that
+                              round.
+      • playlist_open       – equal to submission_deadline; voting becomes
+                              possible the moment the last submission lands.
+
+    All three columns are timezone-aware UTC Timestamps.
+
+    Returns a DataFrame with columns:
+        round_id, round_name, submission_deadline, vote_deadline, playlist_open
     """
-    import numpy as np
-
     sub_ts = (
         submissions.assign(ts=pd.to_datetime(submissions["Created"], utc=True))
         .groupby("Round ID")["ts"]
@@ -213,15 +203,11 @@ def _infer_round_deadlines(
         .join(vote_ts, how="left")
     )
 
-    # Snap to end-of-day on the appropriate weekday
-    rds["submission_deadline"] = rds["last_sub"].apply(
-        lambda t: _next_weekday(t, 0) if pd.notna(t) else pd.NaT  # Monday
-    )
-    rds["vote_deadline"] = rds["last_vote"].apply(
-        lambda t: _next_weekday(t, 4) if pd.notna(t) else pd.NaT  # Friday
-    )
-    # playlist_open = the moment the submission window closes
-    rds["playlist_open"] = rds["submission_deadline"] + pd.Timedelta(seconds=1)
+    # Deadlines ARE the last observed timestamps — no weekday snapping needed.
+    rds["submission_deadline"] = rds["last_sub"]
+    rds["vote_deadline"]       = rds["last_vote"]
+    # Voting opens the moment the submission window closes.
+    rds["playlist_open"]       = rds["last_sub"]
 
     return rds.reset_index()
 
@@ -235,8 +221,9 @@ def submission_timing_stats(
     """
     Per-player submission timing stats across all rounds they participated in.
 
-    For each submission, compute how many hours *before* the Monday deadline
-    the person submitted (positive = early, negative = late/edge).
+    For each submission, compute how many hours *before* the round's last
+    submission (the actual close of the submission window) the person submitted.
+    Positive = submitted before the window closed; 0 = last to submit.
 
     Returns a DataFrame with columns:
         player_id, player_name,
@@ -286,9 +273,10 @@ def vote_timing_stats(
     For each round a player voted in, their *vote timestamp* is the single
     timestamp shared across all their votes in that round (Music League records
     them all at once).  We compute:
-      • hours_after_playlist  – hours after the submission deadline (playlist open)
-                                when the player submitted their votes
-      • hours_before_deadline – hours before the Friday vote deadline
+      • hours_after_playlist  – hours after the last submission landed (playlist
+                                became available) when the player cast their votes.
+      • hours_before_deadline – hours before the round's last vote (the actual
+                                close of the voting window).
 
     Returns a DataFrame with columns:
         player_id, player_name,
