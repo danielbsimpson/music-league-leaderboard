@@ -1,9 +1,16 @@
 """
 Music League Stats — Streamlit App
 ====================================
-Thin orchestrator: sidebar, data loading, tab dispatch, and report download.
-
-Run with:
+Thin orchestrator: sidebar, data loading, tab dispatch, and report download.tabs = st.tabs([
+    "Leaderboard",
+    "Song Stats",
+    "Fan Map",
+    "Trends",
+    "Comments",
+    "Economy",
+    "⏱️ Timing",
+    "🗞️ Headlines",
+])h:
     streamlit run app.py
 """
 
@@ -26,6 +33,7 @@ from ui import (
     tab_comments,
     tab_economy,
     tab_timing,
+    tab_headlines,
 )
 
 # ---------------------------------------------------------------------------
@@ -156,7 +164,8 @@ tabs = st.tabs([
     "Trends",
     "Comments",
     "Economy",
-    "⏱️ Timing",
+    "Timing",
+    "Player Headlines",
 ])
 
 with tabs[0]:
@@ -179,3 +188,6 @@ with tabs[5]:
 
 with tabs[6]:
     tab_timing.render(data)
+
+with tabs[7]:
+    tab_headlines.render(data)
