@@ -614,5 +614,5 @@ def render(data: LeagueData) -> None:
         if rows:
             st.dataframe(
                 pd.DataFrame(rows).set_index("Player"),
-                use_container_width=True,
+                width="stretch",
             )

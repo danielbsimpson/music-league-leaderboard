@@ -286,7 +286,7 @@ def render(data: LeagueData) -> None:
     sub_table["Latest (fewest hrs)"]     = sub_table["Latest (fewest hrs)"].apply(lambda x: round(x, 1))
 
     with st.expander("📋 Full submission timing table"):
-        st.dataframe(sub_table, use_container_width=True, hide_index=True)
+        st.dataframe(sub_table, width="stretch", hide_index=True)
 
     st.divider()
 
@@ -344,7 +344,7 @@ def render(data: LeagueData) -> None:
         vote_table[col] = vote_table[col].apply(lambda x: round(x, 1))
 
     with st.expander("📋 Full vote timing table"):
-        st.dataframe(vote_table, use_container_width=True, hide_index=True)
+        st.dataframe(vote_table, width="stretch", hide_index=True)
 
     st.divider()
 
