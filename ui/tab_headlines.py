@@ -439,16 +439,24 @@ def assign_headlines(
     metrics: dict[str, dict[str, float]],
 ) -> list[PlayerHeadlines]:
     """
-    For every player:
-      • POSITIVE headline — the metric/category where they rank highest overall.
-      • FUNNY headline    — their best rank in a *different category*, chosen
-                            from the quirkiest categories first (timing, zeros,
-                            consistency, …) so the two headlines always tell
-                            different stories about the player.
+    Global two-pass greedy assignment so every headline text is unique.
+
+    Pass 1 — POSITIVE headlines:
+      Build a priority queue of (rank, player, hdef, reason) across all
+      metrics.  Process best-rank entries first; assign the positive headline
+      to the player if they haven't been assigned one yet AND that headline
+      text hasn't been claimed by another player.
+
+    Pass 2 — FUNNY headlines:
+      Same greedy approach, but for each player the funny headline must come
+      from a different category than their positive one, and the funny headline
+      text must not already be claimed.  Categories are tried in
+      _FUNNY_CATEGORY_PRIORITY order so timing/behaviour quirks win over
+      repeated performance stats.
     """
     names = list(_name_map(data.competitors).values())
 
-    # Build per-player list of (rank, hdef, reason) sorted best-first
+    # Build every (rank, hdef, reason) tuple per player across all metrics
     player_candidates: dict[str, list[tuple[int, HeadlineDef, str]]] = {n: [] for n in names}
 
     for hdef in HEADLINE_CATALOGUE:
@@ -462,71 +470,142 @@ def assign_headlines(
             reason = _reason_text(hdef.metric_key, player, score, metrics)
             player_candidates[player].append((rank, hdef, reason))
 
-    results: list[PlayerHeadlines] = []
+    # Sort each player's list best-rank first
+    for n in names:
+        player_candidates[n].sort(key=lambda x: x[0])
 
-    for name in sorted(names):
-        candidates = sorted(player_candidates[name], key=lambda x: x[0])
+    # ------------------------------------------------------------------ Pass 1
+    # Assign POSITIVE headlines greedily — best global rank wins first claim.
+    # Build a flat list of (rank, player, hdef, reason), sort by rank, iterate.
+    all_pos_entries: list[tuple[int, str, HeadlineDef, str]] = []
+    for player, cands in player_candidates.items():
+        for rank, hdef, reason in cands:
+            all_pos_entries.append((rank, player, hdef, reason))
+    all_pos_entries.sort(key=lambda x: x[0])
 
-        # ---- POSITIVE: best overall rank, any category ----
-        pos_headline  = "🎵 A True Music League Competitor"
-        pos_reason    = "Solid all-round effort!"
-        pos_category: str | None = None
-        pos_chosen_key: str | None = None
+    assigned_pos: dict[str, tuple[HeadlineDef, str]] = {}   # player → (hdef, reason)
+    claimed_pos_texts: set[str] = set()                      # headline text already used
 
-        for rank, hdef, reason in candidates:
-            if rank == 0:
-                pos_headline   = hdef.positive
-                pos_reason     = reason
-                pos_category   = _METRIC_CATEGORY.get(hdef.metric_key)
-                pos_chosen_key = hdef.metric_key
-                break
+    for rank, player, hdef, reason in all_pos_entries:
+        if player in assigned_pos:
+            continue  # already has a positive headline
+        if hdef.positive in claimed_pos_texts:
+            continue  # another player already has this headline text
+        assigned_pos[player] = (hdef, reason)
+        claimed_pos_texts.add(hdef.positive)
 
-        # Fallback if nobody is outright #1
-        if pos_chosen_key is None and candidates:
-            rank, hdef, reason = candidates[0]
-            pos_headline   = hdef.positive
-            pos_reason     = reason
-            pos_category   = _METRIC_CATEGORY.get(hdef.metric_key)
-            pos_chosen_key = hdef.metric_key
+    # Any player still unassigned gets a generic fallback
+    for name in names:
+        if name not in assigned_pos:
+            # Pick their best-ranked candidate whose text isn't claimed
+            for rank, hdef, reason in player_candidates[name]:
+                if hdef.positive not in claimed_pos_texts:
+                    assigned_pos[name] = (hdef, reason)
+                    claimed_pos_texts.add(hdef.positive)
+                    break
+            else:
+                # Absolute last resort — duplicate allowed rather than no headline
+                if player_candidates[name]:
+                    _, hdef, reason = player_candidates[name][0]
+                    assigned_pos[name] = (hdef, reason)
 
-        # ---- FUNNY: best rank in a DIFFERENT category, quirkiest first ----
-        fun_headline = "🎭 Defies Simple Description"
-        fun_reason   = "A true mystery."
+    # ------------------------------------------------------------------ Pass 2
+    # Assign FUNNY headlines — must be a different category from the positive
+    # headline, and the funny text must not already be claimed globally.
+    # Try categories in _FUNNY_CATEGORY_PRIORITY order.
 
-        # Try each funny-priority category in order, skip the positive category
+    claimed_fun_texts: set[str] = set()
+    assigned_fun: dict[str, tuple[HeadlineDef, str]] = {}
+
+    # Build per-player candidates grouped by category for quick lookup
+    def _candidates_by_cat(player: str) -> dict[str, list[tuple[int, HeadlineDef, str]]]:
+        by_cat: dict[str, list[tuple[int, HeadlineDef, str]]] = {}
+        for rank, hdef, reason in player_candidates[player]:
+            cat = _METRIC_CATEGORY.get(hdef.metric_key, "other")
+            by_cat.setdefault(cat, []).append((rank, hdef, reason))
+        return by_cat
+
+    # Process players in order of their positive-headline rank (best performers first)
+    # so the top scorers get first pick of funny headlines too.
+    players_by_pos_rank = sorted(
+        names,
+        key=lambda n: assigned_pos[n][0].metric_key  # stable sort key
+        if n in assigned_pos else "zzz",
+    )
+    # Actually sort by the rank value of their assigned positive metric
+    def _pos_rank(name: str) -> int:
+        if name not in assigned_pos:
+            return 9999
+        hdef, _ = assigned_pos[name]
+        scores = metrics.get(hdef.metric_key, {})
+        sorted_vals = sorted(scores.values(), reverse=True)
+        player_score = scores.get(name)
+        if player_score is None:
+            return 9999
+        try:
+            return sorted_vals.index(player_score)
+        except ValueError:
+            return 9999
+
+    players_ordered = sorted(names, key=_pos_rank)
+
+    for name in players_ordered:
+        pos_hdef, _ = assigned_pos.get(name, (None, None))
+        pos_category = _METRIC_CATEGORY.get(pos_hdef.metric_key) if pos_hdef else None
+        by_cat = _candidates_by_cat(name)
+
+        found = False
+        # Try each funny-priority category, skipping the positive category
         for cat in _FUNNY_CATEGORY_PRIORITY:
             if cat == pos_category:
                 continue
-            # Find best rank in this category for this player
-            for rank, hdef, reason in candidates:
-                if _METRIC_CATEGORY.get(hdef.metric_key) == cat:
-                    fun_headline = hdef.funny
-                    fun_reason   = reason
+            for rank, hdef, reason in by_cat.get(cat, []):
+                if hdef.funny not in claimed_fun_texts:
+                    assigned_fun[name] = (hdef, reason)
+                    claimed_fun_texts.add(hdef.funny)
+                    found = True
                     break
-            if fun_headline != "🎭 Defies Simple Description":
+            if found:
                 break
 
-        # Fallback: any different category
-        if fun_headline == "🎭 Defies Simple Description":
-            for rank, hdef, reason in candidates:
-                if _METRIC_CATEGORY.get(hdef.metric_key) != pos_category:
-                    fun_headline = hdef.funny
-                    fun_reason   = reason
+        if not found:
+            # Fallback: any category different from positive
+            for rank, hdef, reason in player_candidates[name]:
+                cat = _METRIC_CATEGORY.get(hdef.metric_key)
+                if cat != pos_category and hdef.funny not in claimed_fun_texts:
+                    assigned_fun[name] = (hdef, reason)
+                    claimed_fun_texts.add(hdef.funny)
+                    found = True
                     break
 
-        # Last resort: different metric key at minimum
-        if fun_headline == "🎭 Defies Simple Description":
-            for rank, hdef, reason in candidates:
-                if hdef.metric_key != pos_chosen_key:
-                    fun_headline = hdef.funny
-                    fun_reason   = reason
+        if not found:
+            # Last resort: any unclaimed funny text regardless of category
+            for rank, hdef, reason in player_candidates[name]:
+                if hdef.funny not in claimed_fun_texts:
+                    assigned_fun[name] = (hdef, reason)
+                    claimed_fun_texts.add(hdef.funny)
+                    found = True
                     break
 
+        if not found and player_candidates[name]:
+            # Absolute fallback — allow a duplicate rather than no headline
+            _, hdef, reason = player_candidates[name][0]
+            assigned_fun[name] = (hdef, reason)
+
+    # ------------------------------------------------------------------ Build results
+    results: list[PlayerHeadlines] = []
+    for name in sorted(names):
+        pos_hdef, pos_reason = assigned_pos.get(
+            name, (None, "Solid all-round effort!")
+        )
+        fun_hdef, fun_reason = assigned_fun.get(
+            name, (None, "A true mystery.")
+        )
         results.append(PlayerHeadlines(
             name=name,
-            positive_headline=pos_headline,
+            positive_headline=pos_hdef.positive if pos_hdef else "🎵 A True Music League Competitor",
             positive_reason=pos_reason,
-            funny_headline=fun_headline,
+            funny_headline=fun_hdef.funny if fun_hdef else "🎭 Defies Simple Description",
             funny_reason=fun_reason,
         ))
 
