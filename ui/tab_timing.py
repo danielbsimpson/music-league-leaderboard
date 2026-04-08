@@ -203,6 +203,57 @@ def render(data: LeagueData) -> None:
     st.divider()
 
     # ================================================================ SECTION 2
+    # Combined leaderboard — podium callouts
+    # ================================================================
+    st.subheader("🎖️ Timing Podiums")
+
+    def _podium(title: str, df: pd.DataFrame, col: str, ascending: bool, unit: str) -> None:
+        st.markdown(f"**{title}**")
+        ranked = df.nsmallest(3, col) if ascending else df.nlargest(3, col)
+        for i, (_, row) in enumerate(ranked.iterrows()):
+            st.write(f"{_medal(i)} **{row['player_name']}** — {_hms(row[col])} {unit}")
+
+    p1, p2, p3, p4 = st.columns(4)
+
+    with p1:
+        _podium(
+            title="⚡ Fastest avg voter",
+            df=vote_stats,
+            col="avg_hours_after_playlist",
+            ascending=True,
+            unit="after playlist",
+        )
+
+    with p2:
+        _podium(
+            title="🐢 Most patient listener",
+            df=vote_stats,
+            col="avg_hours_after_playlist",
+            ascending=False,
+            unit="after playlist",
+        )
+
+    with p3:
+        _podium(
+            title="🌅 Submits the earliest",
+            df=sub_stats,
+            col="avg_hours_before_deadline",
+            ascending=False,
+            unit="before deadline",
+        )
+
+    with p4:
+        _podium(
+            title="😬 Cuts it closest",
+            df=sub_stats,
+            col="avg_hours_before_deadline",
+            ascending=True,
+            unit="before deadline",
+        )
+
+    st.divider()
+
+    # ================================================================ SECTION 3
     # Average submission timing
     # ================================================================
     st.subheader("📬 Submission Timing — Avg Hours Before Monday Deadline")
@@ -294,57 +345,6 @@ def render(data: LeagueData) -> None:
 
     with st.expander("📋 Full vote timing table"):
         st.dataframe(vote_table, use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    # ================================================================ SECTION 4
-    # Combined leaderboard — podium callouts
-    # ================================================================
-    st.subheader("🎖️ Timing Podiums")
-
-    def _podium(title: str, df: pd.DataFrame, col: str, ascending: bool, unit: str) -> None:
-        st.markdown(f"**{title}**")
-        ranked = df.nsmallest(3, col) if ascending else df.nlargest(3, col)
-        for i, (_, row) in enumerate(ranked.iterrows()):
-            st.write(f"{_medal(i)} **{row['player_name']}** — {_hms(row[col])} {unit}")
-
-    p1, p2, p3, p4 = st.columns(4)
-
-    with p1:
-        _podium(
-            title="⚡ Fastest avg voter",
-            df=vote_stats,
-            col="avg_hours_after_playlist",
-            ascending=True,
-            unit="after playlist",
-        )
-
-    with p2:
-        _podium(
-            title="🐢 Most patient listener",
-            df=vote_stats,
-            col="avg_hours_after_playlist",
-            ascending=False,
-            unit="after playlist",
-        )
-
-    with p3:
-        _podium(
-            title="🌅 Submits the earliest",
-            df=sub_stats,
-            col="avg_hours_before_deadline",
-            ascending=False,
-            unit="before deadline",
-        )
-
-    with p4:
-        _podium(
-            title="😬 Cuts it closest",
-            df=sub_stats,
-            col="avg_hours_before_deadline",
-            ascending=True,
-            unit="before deadline",
-        )
 
     st.divider()
 
