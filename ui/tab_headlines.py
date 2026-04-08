@@ -365,6 +365,56 @@ def _artist_variety_per_player(
 
 
 # ---------------------------------------------------------------------------
+# Metric category groups — positive and funny must come from different groups
+# ---------------------------------------------------------------------------
+
+# Each metric key is assigned to a category. The assignment algorithm will
+# ensure the positive and funny headlines never share the same category.
+_METRIC_CATEGORY: dict[str, str] = {
+    # Performance
+    "total_points":         "performance",
+    "avg_points_per_round": "performance",
+    "most_misunderstood":   "performance",
+    "podium_appearances":   "performance",
+    "fewest_podiums":       "performance",
+    # Consistency
+    "most_consistent":      "consistency",
+    "most_volatile":        "consistency",
+    # Voting behaviour
+    "most_generous":        "voting",
+    "least_generous":       "voting",
+    # Submission timing
+    "earliest_submitter":   "sub_timing",
+    "latest_submitter":     "sub_timing",
+    # Vote timing
+    "fastest_voter":        "vote_timing",
+    "slowest_voter":        "vote_timing",
+    # Comments
+    "most_talkative":       "comments",
+    "most_commented_on":    "comments",
+    "least_commented_on":   "comments",
+    # Zeros
+    "most_zeros":           "zeros",
+    "fewest_zeros":         "zeros",
+    # Artist variety
+    "most_unique_artists":  "variety",
+    "least_unique_artists": "variety",
+}
+
+# Preferred category order for the FUNNY headline (quirkiest first)
+_FUNNY_CATEGORY_PRIORITY = [
+    "vote_timing",
+    "sub_timing",
+    "zeros",
+    "consistency",
+    "voting",
+    "variety",
+    "comments",
+    "performance",
+]
+
+
+# ---------------------------------------------------------------------------
 # Headline assignment
 # ---------------------------------------------------------------------------
 
@@ -389,86 +439,88 @@ def assign_headlines(
     metrics: dict[str, dict[str, float]],
 ) -> list[PlayerHeadlines]:
     """
-    For every player, award the POSITIVE headline from the metric where they
-    rank #1 (or highest among all players).  Award the FUNNY headline from a
-    *different* metric where they also rank #1.
-
-    Tiebreaker: if two players share the top rank on a metric, both get it.
-    If a player doesn't lead any metric, fall back to generic headlines.
+    For every player:
+      • POSITIVE headline — the metric/category where they rank highest overall.
+      • FUNNY headline    — their best rank in a *different category*, chosen
+                            from the quirkiest categories first (timing, zeros,
+                            consistency, …) so the two headlines always tell
+                            different stories about the player.
     """
     names = list(_name_map(data.competitors).values())
 
-    # Build per-player ranked catalogue entries
-    # For each headline def we compute each player's rank (1 = best)
-    player_positive_candidates: dict[str, list[tuple[int, HeadlineDef, str]]] = {n: [] for n in names}
-    player_funny_candidates:    dict[str, list[tuple[int, HeadlineDef, str]]] = {n: [] for n in names}
+    # Build per-player list of (rank, hdef, reason) sorted best-first
+    player_candidates: dict[str, list[tuple[int, HeadlineDef, str]]] = {n: [] for n in names}
 
     for hdef in HEADLINE_CATALOGUE:
         scores = metrics.get(hdef.metric_key, {})
         if not scores:
             continue
-        # Rank all players on this metric (higher score = better rank = smaller number)
         sorted_players = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         for rank, (player, score) in enumerate(sorted_players):
             if player not in names:
                 continue
             reason = _reason_text(hdef.metric_key, player, score, metrics)
-            if hdef.positive_for_top:
-                player_positive_candidates[player].append((rank, hdef, reason))
-            else:
-                # positive for BOTTOM (lowest original score → highest inverted score)
-                player_positive_candidates[player].append((rank, hdef, reason))
-            # funny headline: always from the metric in the opposite role
-            player_funny_candidates[player].append((rank, hdef, reason))
+            player_candidates[player].append((rank, hdef, reason))
 
     results: list[PlayerHeadlines] = []
 
     for name in sorted(names):
-        pos_candidates = sorted(player_positive_candidates[name], key=lambda x: x[0])
-        fun_candidates = sorted(player_funny_candidates[name],    key=lambda x: x[0])
+        candidates = sorted(player_candidates[name], key=lambda x: x[0])
 
-        # Positive: pick the metric where they rank best
-        pos_headline = "🎵 A True Music League Competitor"
-        pos_reason   = "Solid all-round effort!"
+        # ---- POSITIVE: best overall rank, any category ----
+        pos_headline  = "🎵 A True Music League Competitor"
+        pos_reason    = "Solid all-round effort!"
+        pos_category: str | None = None
         pos_chosen_key: str | None = None
 
-        for rank, hdef, reason in pos_candidates:
-            if rank == 0:  # #1 on this metric
+        for rank, hdef, reason in candidates:
+            if rank == 0:
                 pos_headline   = hdef.positive
                 pos_reason     = reason
+                pos_category   = _METRIC_CATEGORY.get(hdef.metric_key)
                 pos_chosen_key = hdef.metric_key
                 break
 
-        if pos_chosen_key is None and pos_candidates:
-            # Not #1 anywhere — use best rank available
-            rank, hdef, reason = pos_candidates[0]
+        # Fallback if nobody is outright #1
+        if pos_chosen_key is None and candidates:
+            rank, hdef, reason = candidates[0]
             pos_headline   = hdef.positive
             pos_reason     = reason
+            pos_category   = _METRIC_CATEGORY.get(hdef.metric_key)
             pos_chosen_key = hdef.metric_key
 
-        # Funny: pick the metric where they rank best on the *funny* side,
-        # ideally a DIFFERENT metric from the positive one
+        # ---- FUNNY: best rank in a DIFFERENT category, quirkiest first ----
         fun_headline = "🎭 Defies Simple Description"
         fun_reason   = "A true mystery."
 
-        for rank, hdef, reason in fun_candidates:
-            if hdef.metric_key != pos_chosen_key and rank == 0:
-                fun_headline = hdef.funny
-                fun_reason   = reason
+        # Try each funny-priority category in order, skip the positive category
+        for cat in _FUNNY_CATEGORY_PRIORITY:
+            if cat == pos_category:
+                continue
+            # Find best rank in this category for this player
+            for rank, hdef, reason in candidates:
+                if _METRIC_CATEGORY.get(hdef.metric_key) == cat:
+                    fun_headline = hdef.funny
+                    fun_reason   = reason
+                    break
+            if fun_headline != "🎭 Defies Simple Description":
                 break
 
+        # Fallback: any different category
         if fun_headline == "🎭 Defies Simple Description":
-            # Fallback: accept same metric or any top-ranked metric
-            for rank, hdef, reason in fun_candidates:
-                if rank == 0:
+            for rank, hdef, reason in candidates:
+                if _METRIC_CATEGORY.get(hdef.metric_key) != pos_category:
                     fun_headline = hdef.funny
                     fun_reason   = reason
                     break
 
-        if fun_headline == "🎭 Defies Simple Description" and fun_candidates:
-            _, hdef, reason = fun_candidates[0]
-            fun_headline = hdef.funny
-            fun_reason   = reason
+        # Last resort: different metric key at minimum
+        if fun_headline == "🎭 Defies Simple Description":
+            for rank, hdef, reason in candidates:
+                if hdef.metric_key != pos_chosen_key:
+                    fun_headline = hdef.funny
+                    fun_reason   = reason
+                    break
 
         results.append(PlayerHeadlines(
             name=name,
