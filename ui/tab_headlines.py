@@ -552,18 +552,12 @@ def _headline_card(ph: PlayerHeadlines) -> str:
 
         '<div style="background:rgba(29,185,84,0.12);border-radius:8px;'
         'padding:0.45rem 0.75rem;margin-bottom:0.45rem;">'
-        '<div style="font-size:0.70rem;color:#1DB954;font-weight:700;'
-        'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">'
-        '&#9989; Positive Headline</div>'
         f'<div style="font-size:1rem;font-weight:700;color:#e8ffe8;">{pos_h}</div>'
         f'<div style="font-size:0.72rem;color:#aaa;margin-top:3px;">{pos_r}</div>'
         '</div>'
 
         '<div style="background:rgba(255,193,7,0.10);border-radius:8px;'
         'padding:0.45rem 0.75rem;">'
-        '<div style="font-size:0.70rem;color:#ffd166;font-weight:700;'
-        'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">'
-        '&#128514; Funny Headline</div>'
         f'<div style="font-size:1rem;font-weight:700;color:#fff8e1;">{funny_h}</div>'
         f'<div style="font-size:0.72rem;color:#aaa;margin-top:3px;">{funny_r}</div>'
         '</div>'
