@@ -531,55 +531,45 @@ def _reason_text(
 # ---------------------------------------------------------------------------
 
 def _headline_card(ph: PlayerHeadlines) -> str:
-    """Render a player headline card as HTML."""
-    return f"""
-    <div style="
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
-        border-radius: 16px;
-        padding: 1.1rem 1.2rem 1rem 1.2rem;
-        margin-bottom: 0.5rem;
-        box-shadow: 0 4px 18px rgba(0,0,0,0.45);
-        border-left: 4px solid #1DB954;
-        position: relative;
-    ">
-        <!-- Player name -->
-        <div style="
-            font-size: 1.1rem;
-            font-weight: 800;
-            color: #f0f0f0;
-            margin-bottom: 0.65rem;
-            letter-spacing: 0.01em;
-        ">👤 {ph.name}</div>
+    """Render a player headline card as an HTML string (no HTML comments)."""
+    # Escape any angle brackets in dynamic text to prevent HTML injection
+    def _esc(s: str) -> str:
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-        <!-- Positive headline -->
-        <div style="
-            background: rgba(29,185,84,0.12);
-            border-radius: 8px;
-            padding: 0.45rem 0.75rem;
-            margin-bottom: 0.45rem;
-        ">
-            <div style="font-size:0.72rem;color:#1DB954;font-weight:700;
-                        text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">
-                ✅ Positive Headline
-            </div>
-            <div style="font-size:1rem;font-weight:700;color:#e8ffe8">{ph.positive_headline}</div>
-            <div style="font-size:0.72rem;color:#aaa;margin-top:2px">{ph.positive_reason}</div>
-        </div>
+    name     = _esc(ph.name)
+    pos_h    = _esc(ph.positive_headline)
+    pos_r    = _esc(ph.positive_reason)
+    funny_h  = _esc(ph.funny_headline)
+    funny_r  = _esc(ph.funny_reason)
 
-        <!-- Funny headline -->
-        <div style="
-            background: rgba(255,193,7,0.1);
-            border-radius: 8px;
-            padding: 0.45rem 0.75rem;
-        ">
-            <div style="font-size:0.72rem;color:#ffd166;font-weight:700;
-                        text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">
-                😂 Funny Headline
-            </div>
-            <div style="font-size:1rem;font-weight:700;color:#fff8e1">{ph.funny_headline}</div>
-            <div style="font-size:0.72rem;color:#aaa;margin-top:2px">{ph.funny_reason}</div>
-        </div>
-    </div>"""
+    return (
+        '<div style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 60%,#0f3460 100%);'
+        'border-radius:16px;padding:1.1rem 1.2rem 1rem 1.2rem;margin-bottom:0.75rem;'
+        'box-shadow:0 4px 18px rgba(0,0,0,0.45);border-left:4px solid #1DB954;">'
+
+        f'<div style="font-size:1.1rem;font-weight:800;color:#f0f0f0;'
+        f'margin-bottom:0.65rem;letter-spacing:0.01em;">&#128100; {name}</div>'
+
+        '<div style="background:rgba(29,185,84,0.12);border-radius:8px;'
+        'padding:0.45rem 0.75rem;margin-bottom:0.45rem;">'
+        '<div style="font-size:0.70rem;color:#1DB954;font-weight:700;'
+        'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">'
+        '&#9989; Positive Headline</div>'
+        f'<div style="font-size:1rem;font-weight:700;color:#e8ffe8;">{pos_h}</div>'
+        f'<div style="font-size:0.72rem;color:#aaa;margin-top:3px;">{pos_r}</div>'
+        '</div>'
+
+        '<div style="background:rgba(255,193,7,0.10);border-radius:8px;'
+        'padding:0.45rem 0.75rem;">'
+        '<div style="font-size:0.70rem;color:#ffd166;font-weight:700;'
+        'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">'
+        '&#128514; Funny Headline</div>'
+        f'<div style="font-size:1rem;font-weight:700;color:#fff8e1;">{funny_h}</div>'
+        f'<div style="font-size:0.72rem;color:#aaa;margin-top:3px;">{funny_r}</div>'
+        '</div>'
+
+        '</div>'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -603,10 +593,13 @@ def render(data: LeagueData) -> None:
     # ---- Layout: 2-column grid ----
     left_col, right_col = st.columns(2, gap="medium")
 
-    for i, ph in enumerate(headlines):
-        col = left_col if i % 2 == 0 else right_col
-        with col:
-            st.markdown(_headline_card(ph), unsafe_allow_html=True)
+    left_html  = "".join(_headline_card(ph) for i, ph in enumerate(headlines) if i % 2 == 0)
+    right_html = "".join(_headline_card(ph) for i, ph in enumerate(headlines) if i % 2 == 1)
+
+    with left_col:
+        st.markdown(left_html, unsafe_allow_html=True)
+    with right_col:
+        st.markdown(right_html, unsafe_allow_html=True)
 
     st.divider()
 
