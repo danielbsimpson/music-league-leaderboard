@@ -202,127 +202,156 @@ HEADLINE_CATALOGUE: list[HeadlineDef] = [
 def _gather_metrics(data: LeagueData) -> dict[str, dict[str, float]]:
     """
     Return a dict mapping  metric_key → {player_name: score}
-    where a HIGHER score means the player is MORE extreme on that metric.
+    where a HIGHER score means the player is MORE extreme on that metric
+    (i.e. the player who SHOULD win that headline has the highest score).
+
+    Every active player is present in every metric dict so the global
+    assignment algorithm always has a full picture.
     """
-    comp = data.competitors
-    subs = data.submissions
-    vts  = data.votes
-    rds  = data.rounds
+    comp  = data.competitors
+    subs  = data.submissions
+    vts   = data.votes
+    rds   = data.rounds
     names = _name_map(comp)
     all_names = list(names.values())
 
-    metrics: dict[str, dict[str, float]] = {k: {} for k in [
-        "total_points", "avg_points_per_round", "most_misunderstood",
-        "podium_appearances", "fewest_podiums",
-        "most_consistent", "most_volatile",
-        "most_generous", "least_generous",
-        "earliest_submitter", "latest_submitter",
-        "fastest_voter", "slowest_voter",
-        "most_talkative", "most_commented_on", "least_commented_on",
-        "most_zeros", "fewest_zeros",
-        "most_unique_artists", "least_unique_artists",
-    ]}
+    # Initialise every player at 0 for every metric so nobody is missing
+    metrics: dict[str, dict[str, float]] = {
+        k: {n: 0.0 for n in all_names}
+        for k in [
+            "total_points", "avg_points_per_round", "most_misunderstood",
+            "podium_appearances", "fewest_podiums",
+            "most_consistent", "most_volatile",
+            "most_generous", "least_generous",
+            "earliest_submitter", "latest_submitter",
+            "fastest_voter", "slowest_voter",
+            "most_talkative", "most_commented_on", "least_commented_on",
+            "most_zeros", "fewest_zeros",
+            "most_unique_artists", "least_unique_artists",
+        ]
+    }
 
-    # -- total points --
+    # ------------------------------------------------------------------ points
     pps = _points_per_submission(subs, vts)
     for pid, pts in pps.groupby("Submitter ID")["TotalPoints"].sum().items():
         name = names.get(pid)
         if name:
             metrics["total_points"][name] = float(pts)
 
-    # -- avg points per round --
     for entry in player_round_averages(subs, vts, comp):
         metrics["avg_points_per_round"][entry["name"]] = entry["avg_points"]
 
-    # -- most misunderstood (lowest total points → highest score here) --
+    # most_misunderstood = fewest points → invert so lowest scorer ranks highest
     total_pts = metrics["total_points"]
-    if total_pts:
-        max_pts = max(total_pts.values()) + 1
-        for name, pts in total_pts.items():
-            metrics["most_misunderstood"][name] = max_pts - pts
+    max_pts = max(total_pts.values(), default=1)
+    for name, pts in total_pts.items():
+        metrics["most_misunderstood"][name] = float(max_pts - pts)
 
-    # -- podium appearances & fewest podiums --
+    # --------------------------------------------------------- podium appearances
     podium_list = top_podium_appearances(subs, vts, comp, rds)
+    # Ensure every player is present (they start at 0 from init)
     max_podiums = max((e["podium_appearances"] for e in podium_list), default=1)
     for entry in podium_list:
-        metrics["podium_appearances"][entry["name"]] = float(entry["podium_appearances"])
-        metrics["fewest_podiums"][entry["name"]] = float(max_podiums - entry["podium_appearances"] + 1)
+        n = entry["name"]
+        p = float(entry["podium_appearances"])
+        metrics["podium_appearances"][n] = p
+        # fewest_podiums: player with ZERO podiums scores highest
+        # Use (max_podiums + 1 - podiums) so 0 podiums → max_podiums+1, max podiums → 1
+        metrics["fewest_podiums"][n] = float(max_podiums + 1 - p)
 
-    # -- consistency (lowest variance = most consistent = highest score) --
+    # ------------------------------------------------------------ consistency
     con_list = most_consistent_submitter(subs, vts, comp)
     if con_list:
-        max_var = max(e["variance"] for e in con_list) + 1
-        for entry in con_list:
-            metrics["most_consistent"][entry["name"]] = max_var - entry["variance"]
-            metrics["most_volatile"][entry["name"]]   = entry["variance"]
+        variances = {e["name"]: e["variance"] for e in con_list}
+        max_var = max(variances.values(), default=1)
+        for name, var in variances.items():
+            # most_consistent  = lowest variance → invert
+            metrics["most_consistent"][name] = float(max_var - var)
+            # most_volatile    = highest variance → use raw value
+            metrics["most_volatile"][name]   = float(var)
 
-    # -- generosity (avg distinct recipients per round) --
+    # ---------------------------------------------------------------- generosity
     gen_list = most_generous_voter(vts, subs, comp)
     if gen_list:
-        max_gen = max(e["avg_distinct_recipients_per_round"] for e in gen_list) + 1
-        for entry in gen_list:
-            v = entry["avg_distinct_recipients_per_round"]
-            metrics["most_generous"][entry["voter"]] = v
-            metrics["least_generous"][entry["voter"]] = max_gen - v
+        gen_vals = {e["voter"]: e["avg_distinct_recipients_per_round"] for e in gen_list}
+        max_gen  = max(gen_vals.values(), default=1)
+        for name, v in gen_vals.items():
+            metrics["most_generous"][name]  = float(v)
+            # least_generous = fewest distinct recipients → invert
+            metrics["least_generous"][name] = float(max_gen - v)
 
-    # -- submission timing --
+    # --------------------------------------------------------- submission timing
     try:
         sub_stats = submission_timing_stats(subs, vts, rds, comp)
         if not sub_stats.empty:
             for _, row in sub_stats.iterrows():
                 name = row["player_name"]
-                if pd.isna(name):
+                if pd.isna(name) or name not in metrics["earliest_submitter"]:
                     continue
-                avg = row["avg_hours_before_deadline"]
-                metrics["earliest_submitter"][name] = float(avg)   # more hours = earlier
-                metrics["latest_submitter"][name]   = float(-avg)  # fewer hours = later
+                avg = float(row["avg_hours_before_deadline"])
+                # earliest_submitter = most hours before deadline → high raw value
+                metrics["earliest_submitter"][name] = avg
+                # latest_submitter   = fewest hours (or negative) → invert
+                metrics["latest_submitter"][name]   = -avg
     except Exception:
         pass
 
-    # -- vote timing --
+    # ------------------------------------------------------------- vote timing
     try:
         vote_stats = vote_timing_stats(subs, vts, rds, comp)
-        if not vote_stats.empty:
-            if "avg_hours_after_playlist" in vote_stats.columns:
-                max_h = vote_stats["avg_hours_after_playlist"].max() + 1
-                for _, row in vote_stats.iterrows():
-                    name = row["player_name"]
-                    if pd.isna(name):
-                        continue
-                    h = row["avg_hours_after_playlist"]
-                    metrics["fastest_voter"][name] = float(max_h - h)  # fewer hours = faster
-                    metrics["slowest_voter"][name]  = float(h)
+        if not vote_stats.empty and "avg_hours_after_playlist" in vote_stats.columns:
+            all_h = vote_stats["avg_hours_after_playlist"].dropna()
+            max_h = float(all_h.max()) if not all_h.empty else 1.0
+            for _, row in vote_stats.iterrows():
+                name = row["player_name"]
+                if pd.isna(name) or name not in metrics["fastest_voter"]:
+                    continue
+                h = float(row["avg_hours_after_playlist"])
+                # fastest_voter  = fewest hours after playlist → invert
+                metrics["fastest_voter"][name] = max_h - h
+                # slowest_voter  = most hours after playlist → raw value
+                metrics["slowest_voter"][name]  = h
     except Exception:
         pass
 
-    # -- comments --
+    # ----------------------------------------------------------------- comments
     talk_list = most_talkative_commenter(vts, subs, comp)
     for entry in talk_list:
         metrics["most_talkative"][entry["name"]] = float(entry["total"])
 
     recv_list = top_3_comment_winners(subs, vts, comp, top_n=len(comp))
     if recv_list:
-        max_recv = max(e["comments_received"] for e in recv_list) + 1
-        for entry in recv_list:
-            cr = entry["comments_received"]
-            metrics["most_commented_on"][entry["name"]] = float(cr)
-            metrics["least_commented_on"][entry["name"]] = float(max_recv - cr)
+        recv_vals = {e["name"]: float(e["comments_received"]) for e in recv_list}
+        max_recv  = max(recv_vals.values(), default=1)
+        for name, cr in recv_vals.items():
+            metrics["most_commented_on"][name]  = cr
+            # least_commented_on = fewest comments received → invert
+            metrics["least_commented_on"][name] = max_recv - cr
 
-    # -- zero points incidents --
+    # -------------------------------------------------------------- zero points
+    # zero_points_incidents_per_player only returns players who HAVE scored zero.
+    # Players with 0 zero-rounds must be handled explicitly.
     zpi = zero_points_incidents_per_player(comp, subs, vts)
-    if zpi:
-        max_z = max(zpi.values()) + 1
-        for name, z in zpi.items():
-            metrics["most_zeros"][name]   = float(z)
-            metrics["fewest_zeros"][name] = float(max_z - z)
+    # All players default to 0 zeros (already initialised above)
+    for name, z in zpi.items():
+        if name in metrics["most_zeros"]:
+            metrics["most_zeros"][name] = float(z)
 
-    # -- artist variety (unique artists submitted) --
+    max_z = max(metrics["most_zeros"].values(), default=1)
+    for name in all_names:
+        z = metrics["most_zeros"][name]
+        # fewest_zeros: player with 0 zeros scores max_z (highest); most zeros scores 0
+        metrics["fewest_zeros"][name] = float(max_z - z)
+
+    # ------------------------------------------------------------ artist variety
     variety = _artist_variety_per_player(subs, names)
     if variety:
-        max_v = max(variety.values()) + 1
+        max_v = max(variety.values(), default=1)
         for name, v in variety.items():
-            metrics["most_unique_artists"][name]  = float(v)
-            metrics["least_unique_artists"][name] = float(max_v - v)
+            if name in metrics["most_unique_artists"]:
+                metrics["most_unique_artists"][name]  = float(v)
+                # least_unique_artists = fewest unique artists → invert
+                metrics["least_unique_artists"][name] = float(max_v - v)
 
     return metrics
 
