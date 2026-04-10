@@ -22,6 +22,19 @@ from music_league_stats import (
 from ui.components import bar_chart, CHART_BASE, ACCENT
 
 
+_PLAYER_PALETTE = [
+    "#1DB954", "#ffd166", "#ef476f", "#118ab2", "#06d6a0",
+    "#f4a261", "#e76f51", "#a8dadc", "#c77dff", "#ff6b6b",
+    "#4ecdc4", "#ffe66d", "#ff9f1c", "#2ec4b6", "#e71d36",
+]
+
+
+def _with_alpha(hex_color: str, alpha: float = 0.4) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 def render(data: LeagueData) -> None:
     comp = data.competitors
     subs = data.submissions
@@ -72,6 +85,90 @@ def render(data: LeagueData) -> None:
             key="fan_least_compat",
         )
         st.dataframe(compat_df, width="stretch", hide_index=True)
+
+    # ------------------------------------------------- per-player voting Sankey
+    st.subheader(f"🎵 How {target_name} Voted")
+    st.caption(f"Points sent by {target_name} to every other player across all rounds.")
+
+    # Resolve target_name back to a competitor ID
+    reverse_names = {v: k for k, v in names.items()}
+    target_id = reverse_names.get(target_name)
+
+    if target_id is not None:
+        uri_to_sub_id = dict(zip(subs["SpotifyURI"], subs["Submitter ID"]))
+        vts_player = vts.copy()
+        vts_player["ReceiverID"] = vts_player["SpotifyURI"].map(uri_to_sub_id)
+        # Keep only votes cast BY the target player, excluding self-votes
+        vts_player = vts_player[
+            (vts_player["Voter ID"] == target_id)
+            & (vts_player["ReceiverID"].notna())
+            & (vts_player["ReceiverID"] != target_id)
+        ]
+        player_edges = (
+            vts_player.groupby("ReceiverID")["Points"]
+            .sum()
+            .reset_index()
+            .assign(ReceiverName=lambda df: df["ReceiverID"].map(names))
+            .sort_values("Points", ascending=False)
+        )
+
+        if player_edges.empty:
+            st.info(f"No voting data found for {target_name}.")
+        else:
+            # Nodes: single left node (voter) + right nodes (receivers)
+            p_left_nodes  = [target_name]
+            p_right_nodes = player_edges["ReceiverName"].tolist()
+            p_all_nodes   = p_left_nodes + p_right_nodes
+            p_n_right     = len(p_right_nodes)
+
+            p_sources = [0] * len(player_edges)
+            p_targets = [1 + i for i in range(len(player_edges))]
+            p_values  = player_edges["Points"].tolist()
+
+            # x/y positions
+            p_node_x = [0.01] + [0.99] * p_n_right
+            p_node_y = (
+                [0.5]
+                + [round((i + 1) / (p_n_right + 1), 3) for i in range(p_n_right)]
+            )
+
+            # Colour palette: voter node is green, receivers get unique colours
+            p_receiver_colors = {
+                name: _PLAYER_PALETTE[i % len(_PLAYER_PALETTE)]
+                for i, name in enumerate(p_right_nodes)
+            }
+            p_node_colors = [ACCENT] + [p_receiver_colors[n] for n in p_right_nodes]
+            p_link_colors = [
+                _with_alpha(p_receiver_colors[player_edges.iloc[i]["ReceiverName"]])
+                for i in range(len(player_edges))
+            ]
+
+            fig_player_sankey = go.Figure(go.Sankey(
+                arrangement="fixed",
+                node=dict(
+                    label     = p_all_nodes,
+                    x         = p_node_x,
+                    y         = p_node_y,
+                    color     = p_node_colors,
+                    pad       = 15,
+                    thickness = 20,
+                    line      = dict(color="rgba(0,0,0,0)", width=0),
+                ),
+                link=dict(
+                    source = p_sources,
+                    target = p_targets,
+                    value  = p_values,
+                    color  = p_link_colors,
+                ),
+            ))
+            fig_player_sankey.update_layout(
+                **{**CHART_BASE, "margin": dict(l=10, r=10, t=50, b=10)},
+                title=f"Points distributed by {target_name} (left) → recipients (right)",
+                height=max(400, 40 * p_n_right),
+            )
+            st.plotly_chart(fig_player_sankey, width="stretch", key="fan_player_sankey")
+    else:
+        st.info(f"No voting data found for {target_name}.")
 
     st.divider()
 
@@ -134,23 +231,12 @@ def render(data: LeagueData) -> None:
     )
 
     # Assign each right-side (receiver) node a unique colour from a palette
-    _PLAYER_PALETTE = [
-        "#1DB954", "#ffd166", "#ef476f", "#118ab2", "#06d6a0",
-        "#f4a261", "#e76f51", "#a8dadc", "#c77dff", "#ff6b6b",
-        "#4ecdc4", "#ffe66d", "#ff9f1c", "#2ec4b6", "#e71d36",
-    ]
     receiver_colors = {
         name: _PLAYER_PALETTE[i % len(_PLAYER_PALETTE)]
         for i, name in enumerate(right_nodes)
     }
     # Left nodes are neutral grey; right nodes get their unique colour
     node_colors = ["#888888"] * n_left + [receiver_colors[n] for n in right_nodes]
-
-    # Links coloured to match the target receiver, with transparency
-    def _with_alpha(hex_color: str, alpha: float = 0.4) -> str:
-        h = hex_color.lstrip("#")
-        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-        return f"rgba({r},{g},{b},{alpha})"
 
     link_colors = [
         _with_alpha(receiver_colors[edges.iloc[i]["ReceiverName"]])
@@ -191,11 +277,12 @@ def render(data: LeagueData) -> None:
     )
     fig_matrix.update_layout(**CHART_BASE)
 
-    tab_sankey, tab_heatmap = st.tabs(["Sankey Flow", "Heatmap"])
-    with tab_sankey:
-        st.plotly_chart(fig_sankey, width="stretch", key="fan_sankey")
+    tab_heatmap, tab_sankey = st.tabs(["Heatmap", "Sankey Flow"])
+    
     with tab_heatmap:
         st.plotly_chart(fig_matrix, width="stretch", key="fan_matrix")
+    with tab_sankey:
+        st.plotly_chart(fig_sankey, width="stretch", key="fan_sankey")
 
     st.divider()
 
