@@ -454,6 +454,79 @@ def _voter_count_per_submission(votes: pd.DataFrame) -> pd.DataFrame:
     return vc
 
 
+def unique_voters_per_player(
+    submissions: pd.DataFrame,
+    votes: pd.DataFrame,
+    competitors: pd.DataFrame,
+    rounds: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Compute unique voter counts per player, broken down by round.
+
+    Returns
+    -------
+    pivot : pd.DataFrame
+        Rows = player display names, columns = round names,
+        values = count of unique voters who gave that player ≥1 point in that round.
+        Players who did not submit in a round get 0.
+    totals : pd.DataFrame
+        One row per player with columns ['Player', 'TotalUniqueVoters'],
+        sorted descending.  This is the sum across rounds of unique voters
+        (each voter can be counted once *per round* they voted for the player,
+        so a voter who voted for the same player in 5 rounds contributes 5).
+    """
+    names = _name_map(competitors)
+
+    # Join submissions → votes (only votes with points > 0 count)
+    uri_to_submitter = dict(zip(submissions["SpotifyURI"], submissions["Submitter ID"]))
+    uri_to_round     = dict(zip(submissions["SpotifyURI"], submissions["Round ID"]))
+    round_name_map   = dict(zip(rounds["ID"], rounds["Name"]))
+
+    pos_votes = votes[votes["Points"] > 0].copy()
+    pos_votes["SubmitterID"] = pos_votes["SpotifyURI"].map(uri_to_submitter)
+    pos_votes["RoundID"]     = pos_votes["Round ID"]
+
+    # Drop votes where the URI isn't in submissions (shouldn't happen, but safe)
+    pos_votes = pos_votes[pos_votes["SubmitterID"].notna()]
+    # Exclude self-votes
+    pos_votes = pos_votes[pos_votes["Voter ID"] != pos_votes["SubmitterID"]]
+
+    # Unique voters per (player, round) — use nunique on Voter ID
+    per_round = (
+        pos_votes.groupby(["SubmitterID", "RoundID"])["Voter ID"]
+        .nunique()
+        .reset_index()
+        .rename(columns={"Voter ID": "UniqueVoters"})
+    )
+    per_round["PlayerName"] = per_round["SubmitterID"].map(names)
+    per_round["RoundName"]  = per_round["RoundID"].map(round_name_map)
+
+    # Pivot: rows = players, columns = round names
+    pivot = per_round.pivot_table(
+        index="PlayerName", columns="RoundName",
+        values="UniqueVoters", fill_value=0,
+    )
+
+    # Order columns by the first time a round appears in the source data
+    round_order = (
+        rounds.sort_values("Created")["Name"]
+        .drop_duplicates()
+        .tolist()
+    )
+    pivot = pivot.reindex(
+        columns=[c for c in round_order if c in pivot.columns]
+    )
+
+    # Total unique voters per player (sum of per-round unique voters)
+    totals_series = pivot.sum(axis=1).sort_values(ascending=False)
+    totals = pd.DataFrame({
+        "Player":            totals_series.index,
+        "TotalUniqueVoters": totals_series.values,
+    })
+
+    return pivot, totals
+
+
 # ---------------------------------------------------------------------------
 # New Metrics: Player Round Averages, Most Submitted Songs, Most Artist Appearances
 # ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ from music_league_stats import (
     most_misunderstood,
     zero_points_incidents,
     player_round_averages,
+    unique_voters_per_player,
     _points_per_submission,
     _name_map,
 )
@@ -153,3 +154,41 @@ def render(data: LeagueData) -> None:
         hide_index=True,
         width="stretch",
     )
+
+    st.divider()
+
+    # --------------------------------------------------- unique voters
+    st.subheader("👥 Unique Voters")
+    st.caption(
+        "Number of distinct voters who gave each player at least one point, "
+        "counted per round (a voter who supports the same player in 3 different "
+        "rounds contributes 3 to that player's total)."
+    )
+
+    uv_pivot, uv_totals = unique_voters_per_player(subs, vts, comp, rds)
+
+    # Bar chart – total unique voters per player
+    st.plotly_chart(
+        bar_chart(
+            uv_totals["Player"].tolist(),
+            uv_totals["TotalUniqueVoters"].tolist(),
+            "Total Unique Voters Per Player (summed across rounds)",
+            color="#c77dff",
+            x_label="Total Unique Voters", y_label="Player",
+        ),
+        width="stretch",
+        key="lb_unique_voters_bar",
+    )
+
+    # Heatmap – unique voters by player × round
+    st.subheader("🗓️ Unique Voters Per Round Heatmap")
+    fig_uv_heat = px.imshow(
+        uv_pivot,
+        color_continuous_scale="Purples",
+        aspect="auto",
+        title="Unique voters per player per round",
+        labels={"x": "Round", "y": "Player", "color": "Unique Voters"},
+    )
+    fig_uv_heat.update_layout(**CHART_BASE)
+    fig_uv_heat.update_xaxes(tickangle=-35)
+    st.plotly_chart(fig_uv_heat, width="stretch", key="lb_unique_voters_heatmap")
