@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🎵 T5 Music League Stats</title>
+  <link rel="stylesheet" href="css/style.css" />
+
+  <!-- CDN Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ====================================================================== -->
+<!-- SIDEBAR                                                                  -->
+<!-- ====================================================================== -->
+<aside id="sidebar">
+  <div id="sidebar-header">
+    <span class="sidebar-icon">🎵</span>
+    <h1 id="sidebar-title">T5 Music League Stats</h1>
+  </div>
+
+  <hr />
+
+  <div class="sidebar-section">
+    <h3>League Mode</h3>
+    <label class="radio-label">
+      <input type="radio" name="mode" value="single" /> Single League
+    </label>
+    <label class="radio-label">
+      <input type="radio" name="mode" value="cumulative" checked /> Cumulative
+    </label>
+  </div>
+
+  <div class="sidebar-section" id="single-select-wrap" style="display:none">
+    <h3>Select League</h3>
+    <select id="single-league-select" class="sidebar-select"></select>
+  </div>
+
+  <div class="sidebar-section" id="multi-select-wrap">
+    <h3>Select Leagues</h3>
+    <div id="multi-league-checkboxes"></div>
+  </div>
+
+  <hr />
+
+  <div class="sidebar-section">
+    <h3>Export</h3>
+    <button id="download-report-btn" class="btn-secondary">⬇ Download .txt Report</button>
+  </div>
+
+  <hr />
+
+  <div id="sidebar-stats" class="sidebar-stats-box"></div>
+</aside>
+
+<!-- ====================================================================== -->
+<!-- MAIN CONTENT                                                             -->
+<!-- ====================================================================== -->
+<main id="main">
+
+  <!-- Loading/error banners -->
+  <div id="loading-banner" class="banner banner-info">Loading league data…</div>
+  <div id="error-banner" class="banner banner-error" style="display:none"></div>
+
+  <!-- Page header -->
+  <div id="page-header" style="display:none">
+    <h2 id="page-title">🎵 T5 Music League Stats</h2>
+    <p id="page-caption" class="caption"></p>
+  </div>
+
+  <!-- Tab navigation -->
+  <nav id="tab-nav" style="display:none">
+    <button class="tab-btn active" data-tab="leaderboard">🏆 Leaderboard</button>
+    <button class="tab-btn" data-tab="songs">🎵 Song Stats</button>
+    <button class="tab-btn" data-tab="fanmap">🤝 Fan Map</button>
+    <button class="tab-btn" data-tab="trends">📈 Trends</button>
+    <button class="tab-btn" data-tab="comments">💬 Comments</button>
+    <button class="tab-btn" data-tab="economy">💰 Economy</button>
+    <button class="tab-btn" data-tab="timing">⏱️ Timing</button>
+    <button class="tab-btn" data-tab="headlines">🗞️ Headlines</button>
+  </nav>
+
+  <!-- Tab panels -->
+  <div id="tab-panels" style="display:none">
+    <section class="tab-panel active" id="panel-leaderboard"></section>
+    <section class="tab-panel" id="panel-songs"></section>
+    <section class="tab-panel" id="panel-fanmap"></section>
+    <section class="tab-panel" id="panel-trends"></section>
+    <section class="tab-panel" id="panel-comments"></section>
+    <section class="tab-panel" id="panel-economy"></section>
+    <section class="tab-panel" id="panel-timing"></section>
+    <section class="tab-panel" id="panel-headlines"></section>
+  </div>
+
+</main>
+
+<!-- ====================================================================== -->
+<!-- MODULES (load order matters — data first, then charts, then tabs)       -->
+<!-- ====================================================================== -->
+<script type="module" src="js/data.js"></script>
+<script type="module" src="js/charts.js"></script>
+<script type="module">
+  import { loadLeagueData, generateReportText } from './js/data.js';
+  import { renderLeaderboard }  from './js/tabs/leaderboard.js';
+  import { renderSongs }        from './js/tabs/songs.js';
+  import { renderFanMap }       from './js/tabs/fanmap.js';
+  import { renderTrends }       from './js/tabs/trends.js';
+  import { renderComments }     from './js/tabs/comments.js';
+  import { renderEconomy }      from './js/tabs/economy.js';
+  import { renderTiming }       from './js/tabs/timing.js';
+  import { renderHeadlines }    from './js/tabs/headlines.js';
+
+  // ── State ──────────────────────────────────────────────────────────────
+  let allLeagues   = [];   // names from manifest
+  let currentData  = null; // LeagueData object
+  let activeTab    = 'leaderboard';
+  let renderedTabs = new Set();
+
+  const TAB_RENDERERS = {
+    leaderboard: renderLeaderboard,
+    songs:       renderSongs,
+    fanmap:      renderFanMap,
+    trends:      renderTrends,
+    comments:    renderComments,
+    economy:     renderEconomy,
+    timing:      renderTiming,
+    headlines:   renderHeadlines,
+  };
+
+  // ── DOM helpers ────────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const loading = (msg) => { $('loading-banner').style.display = 'block'; $('loading-banner').textContent = msg || 'Loading…'; };
+  const doneLoading = () => { $('loading-banner').style.display = 'none'; };
+  const showError = (msg) => { $('error-banner').style.display = 'block'; $('error-banner').textContent = msg; };
+
+  // ── League discovery ──────────────────────────────────────────────────
+  async function discoverLeagues() {
+    // The manifest lives at ../data/manifest.json relative to web_dev/
+    const manifestUrl = '../data/manifest.json';
+    const res = await fetch(manifestUrl);
+    if (!res.ok) throw new Error(`Could not load manifest: ${res.statusText}`);
+    const { leagues } = await res.json();
+    return leagues;
+  }
+
+  // ── Sidebar population ────────────────────────────────────────────────
+  function populateSidebar(leagues) {
+    // Single league select
+    const sel = $('single-league-select');
+    sel.innerHTML = '';
+    leagues.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+
+    // Multi-league checkboxes
+    const box = $('multi-league-checkboxes');
+    box.innerHTML = '';
+    leagues.forEach(name => {
+      const lbl = document.createElement('label');
+      lbl.className = 'checkbox-label';
+      lbl.innerHTML = `<input type="checkbox" value="${name}" checked /> ${name}`;
+      box.appendChild(lbl);
+    });
+  }
+
+  // ── Get currently selected league dirs ────────────────────────────────
+  function getSelectedDirs() {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    if (mode === 'single') {
+      const val = $('single-league-select').value;
+      return val ? [val] : [];
+    } else {
+      return [...document.querySelectorAll('#multi-league-checkboxes input:checked')]
+        .map(cb => cb.value);
+    }
+  }
+
+  // ── Load & render ─────────────────────────────────────────────────────
+  async function loadAndRender() {
+    const dirs = getSelectedDirs();
+    if (dirs.length === 0) {
+      showError('Please select at least one league.');
+      return;
+    }
+    loading('Loading league data…');
+    $('page-header').style.display = 'none';
+    $('tab-nav').style.display     = 'none';
+    $('tab-panels').style.display  = 'none';
+    $('error-banner').style.display = 'none';
+    renderedTabs.clear();
+
+    try {
+      currentData = await loadLeagueData(dirs, '../data/');
+      doneLoading();
+      updateHeader(dirs);
+      $('page-header').style.display = 'block';
+      $('tab-nav').style.display     = 'flex';
+      $('tab-panels').style.display  = 'block';
+      switchTab(activeTab, /* force= */ true);
+    } catch (e) {
+      doneLoading();
+      showError('Error loading data: ' + e.message);
+      console.error(e);
+    }
+  }
+
+  function updateHeader(dirs) {
+    $('page-title').textContent = '🎵 T5 Music League Stats';
+    const { competitors, rounds, submissions, votes } = currentData;
+    const totalPts = votes.reduce((s, v) => s + Number(v.Points || 0), 0);
+    $('page-caption').textContent =
+      `${dirs.length} league(s)  ·  ${rounds.length} rounds  ·  ` +
+      `${new Set(competitors.map(c => c.ID)).size} competitors  ·  ` +
+      `${submissions.length} submissions  ·  ${totalPts.toLocaleString()} points given`;
+
+    // Sidebar stats
+    $('sidebar-stats').innerHTML =
+      `<div class="stat-row"><span>Leagues</span><strong>${dirs.length}</strong></div>` +
+      `<div class="stat-row"><span>Rounds</span><strong>${rounds.length}</strong></div>` +
+      `<div class="stat-row"><span>Submissions</span><strong>${submissions.length}</strong></div>`;
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────────────
+  function switchTab(tabId, force = false) {
+    activeTab = tabId;
+
+    // Update buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tabId);
+    });
+
+    // Update panels
+    document.querySelectorAll('.tab-panel').forEach(panel => {
+      panel.classList.toggle('active', panel.id === `panel-${tabId}`);
+    });
+
+    // Render if not already rendered (or forced)
+    if (currentData && (force || !renderedTabs.has(tabId))) {
+      const panel = $(`panel-${tabId}`);
+      panel.innerHTML = '';
+      renderedTabs.add(tabId);
+      try {
+        TAB_RENDERERS[tabId](panel, currentData);
+      } catch (e) {
+        panel.innerHTML = `<div class="banner banner-error">Error rendering tab: ${e.message}</div>`;
+        console.error(e);
+      }
+    }
+  }
+
+  // ── Download report ───────────────────────────────────────────────────
+  function downloadReport() {
+    if (!currentData) return;
+    const dirs = getSelectedDirs();
+    const text = generateReportText(currentData);
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `music_league_stats_${dirs.join('_and_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Event wiring ──────────────────────────────────────────────────────
+  document.querySelectorAll('input[name="mode"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isCumulative = radio.value === 'cumulative';
+      $('single-select-wrap').style.display = isCumulative ? 'none'  : 'block';
+      $('multi-select-wrap').style.display  = isCumulative ? 'block' : 'none';
+      loadAndRender();
+    });
+  });
+
+  $('single-league-select').addEventListener('change', loadAndRender);
+
+  document.addEventListener('change', e => {
+    if (e.target.closest('#multi-league-checkboxes')) loadAndRender();
+  });
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  $('download-report-btn').addEventListener('click', downloadReport);
+
+  // ── Bootstrap ─────────────────────────────────────────────────────────
+  (async () => {
+    try {
+      loading('Discovering leagues…');
+      allLeagues = await discoverLeagues();
+      if (allLeagues.length === 0) {
+        doneLoading();
+        showError('No leagues found in data/manifest.json');
+        return;
+      }
+      populateSidebar(allLeagues);
+      await loadAndRender();
+    } catch (e) {
+      doneLoading();
+      showError('Failed to initialise app: ' + e.message);
+      console.error(e);
+    }
+  })();
+</script>
+
+</body>
+</html>
